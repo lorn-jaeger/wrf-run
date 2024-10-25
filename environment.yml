@@ -1,0 +1,13 @@
+name: workflow
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11.9
+  - pandas
+  - wrf-python
+  - numpy
+  - joblib
+  - pyyaml
+  - pudb
+prefix: /glade/u/apps/opt/conda/envs/npl-2024b
