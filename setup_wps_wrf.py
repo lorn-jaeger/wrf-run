@@ -402,11 +402,11 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
 
 if __name__ == '__main__':
-    now_time_beg = dt.datetime.utcnow()
+    now_time_beg = dt.datetime.now(dt.UTC)
     params = parse_args()
     params['now_time_beg'] = now_time_beg
     main(**params)
-    now_time_end = dt.datetime.utcnow()
+    now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
