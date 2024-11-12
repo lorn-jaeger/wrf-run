@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-'''
+"""
 setup_wps_wrf.py
 
 Written by: Jared A. Lee (jaredlee@ucar.edu)
@@ -9,7 +9,7 @@ Written on: 31 Mar 2023
 This script links to (and downloads, if necessary) all the files needed to run WPS/WRF on Borah.
 Each program in the WPS/WRF workflow can be optionally executed.
 WRF output files can also be optionally moved to an archival directory (arc_dir).
-'''
+"""
 
 import os
 import sys
@@ -24,6 +24,7 @@ import logging
 import yaml
 import json
 import subprocess
+import glob
 from argparse import RawTextHelpFormatter
 
 from proc_util import exec_command
