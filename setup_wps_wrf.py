@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-'''
+"""
 setup_wps_wrf.py
 
 Written by: Jared A. Lee (jaredlee@ucar.edu)
@@ -9,7 +9,7 @@ Written on: 31 Mar 2023
 This script links to (and downloads, if necessary) all the files needed to run WPS/WRF on Borah.
 Each program in the WPS/WRF workflow can be optionally executed.
 WRF output files can also be optionally moved to an archival directory (arc_dir).
-'''
+"""
 
 import os
 import sys
@@ -24,6 +24,7 @@ import logging
 import yaml
 import json
 import subprocess
+import glob
 from argparse import RawTextHelpFormatter
 
 from proc_util import exec_command
@@ -36,20 +37,20 @@ log = logging.getLogger(__name__)
 def parse_args():
     yaml_config_help = {
      'cycle_int_h': 'integer number of hours between forecast cycles, if cycle_beg_dt and cycle_end_dt are different (default: 24)',
-     'sim_hrs': 'integer number of hours for WRF simulation (default: 192)',
+     'sim_hrs': 'integer number of hours for WRF simulation (default: 24)',
      'icbc_fc_dt': 'integer number of hours prior to WRF cycle time for IC/LBC model cycle (default: 0)',
-     'exp_name': 'experiment name (e.g., exp01, mem01, etc.)',
+     'exp_name': 'experiment name (e.g., exp01, mem01, etc.) (default: None)',
      'realtime': 'flag when running in real-time to keep this script running until WRF is done',
      'archive': 'flag to archive wrfout, wrfinput, wrfbdy, and namelist files to another location',
      'icbc_model': 'string specifying the model to be used for ICs/LBCs (deafult: GEFS)',
-     'grib_dir': 'string or Path object specifying the parent directory for where grib/grib2 input data (e.g., GEFS, GFS, etc.) is downloaded for use by ungrib (default: /ipchome/jaredlee154/data',
+     'grib_dir': 'string or Path object specifying the parent directory for where grib/grib2 input data (e.g., GEFS, GFS, etc.) is downloaded for use by ungrib (default: /glade/derecho/scratch/jaredlee/data',
      'ungrib_domain': 'string (either "full" or "subset") indicating whether to run ungrib on full-domain or geographically-subsetted grib/grib2 files (default: full)',
-     'wps_ins_dir': 'string or Path object specifying the WPS installation directory (default: /ipchome/jaredlee154/programs/WPS-4.4_dmpar)',
-     'wrf_ins_dir': 'string or Path object specifying the WRF installation directory (default: /ipchome/jaredlee154/programs/WRF-4.4.2)',
-     'wps_run_dir': 'string or Path object specifying the parent WPS run directory (default: /ipcscratch/jaredlee154/wps)',
-     'wrf_run_dir': 'string or Path object specifying the parent WRF run directory (default: /ipcscratch/jaredlee154/wrf)',
-     'template_dir': 'string or Path object specifying the directory containing templates for sbatch submission scripts and WPS/WRF namelists (default: /ipchome/jaredlee154/templates)',
-     'arc_dir': 'string or Path object specifying the parent directory where WRF output should be archived (default: /ipchome/jaredlee154/wrf)',
+     'wps_ins_dir': 'string or Path object specifying the WPS installation directory (default: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar)',
+     'wrf_ins_dir': 'string or Path object specifying the WRF installation directory (default: /glade/u/home/jaredlee/programs/WRF-4.6)',
+     'wps_run_dir': 'string or Path object specifying the parent WPS run directory (default: /glade/derecho/scratch/jaredlee/workflow/wps)',
+     'wrf_run_dir': 'string or Path object specifying the parent WRF run directory (default: /glade/derecho/scratch/jaredlee/workflow/wrf)',
+     'template_dir': 'string or Path object specifying the directory containing templates for sbatch submission scripts and WPS/WRF namelists (default: /glade/work/jaredlee/workflow/templates)',
+     'arc_dir': 'string or Path object specifying the parent directory where WRF output should be archived (default: /glade/work/jaredlee/workflow)',
      'upp_yaml': 'string or Path object specifying the config file for the "run_upp" task.',
      'upp_domains': 'list of wrfout domain indices to process with UPP (default: [empty list | 0] to process all wrfout files)',
      'upp_working_dir': 'string or Path object that hosts subdirectories where each of the individual UPP processes is run (default: /tmp/upp)',
@@ -90,21 +91,22 @@ def parse_args():
         params = yaml.safe_load(yaml_f)
     log.info(f"yaml params: {params}")
     params.setdefault('cycle_int_h',24)
-    params.setdefault('sim_hrs', 192)
+    params.setdefault('sim_hrs', 24)
     params.setdefault('icbc_fc_dt',0)
     params.setdefault('exp_name', None)
     params.setdefault('realtime', False)
     params.setdefault('archive', False)
     params.setdefault('ungrib_domain', 'full')
-    params.setdefault('icbc_model', 'GEFS')
-    params.setdefault('grib_dir', '/ipchome/jaredlee154/data')
-    params.setdefault('wps_ins_dir', '/ipchome/jaredlee154/programs/WPS-4.4_dmpar')
-    params.setdefault('wrf_ins_dir', '/ipchome/jaredlee154/programs/WRF-4.4.2')
-    params.setdefault('wps_run_dir', '/ipcscratch/jaredlee154/wps')
-    params.setdefault('template_dir', '/ipchome/jaredlee154/templates')
-    params.setdefault('arc_dir', '/ipchome/jaredlee154/wrf')
+    params.setdefault('icbc_model', 'GFS')
+    params.setdefault('grib_dir', '/glade/derecho/scratch/jaredlee/data')
+    params.setdefault('wps_ins_dir', '/glade/u/home/jaredlee/programs/WPS-4.6-dmpar')
+    params.setdefault('wrf_ins_dir', '/glade/u/home/jaredlee/programs/WRF-4.6')
+    params.setdefault('wps_run_dir', '/glade/derecho/scratch/jaredlee/workflow/wps')
+    params.setdefault('wrf_run_dir', '/glade/derecho/scratch/jaredlee/workflow/wrf')
+    params.setdefault('template_dir', '/glade/work/jaredlee/workflow/templates')
+    params.setdefault('arc_dir', '/glade/work/jaredlee/workflow')
     params.setdefault('upp_working_dir', '/tmp/upp')
-    params.setdefault('upp_yaml', './run_upp.yaml')
+    params.setdefault('upp_yaml', './config/run_upp.yaml')
     params.setdefault('upp_domains', ['0'])
 
     params.setdefault('get_icbc', False)
@@ -401,11 +403,11 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
 
 if __name__ == '__main__':
-    now_time_beg = dt.datetime.utcnow()
+    now_time_beg = dt.datetime.now(dt.UTC)
     params = parse_args()
     params['now_time_beg'] = now_time_beg
     main(**params)
-    now_time_end = dt.datetime.utcnow()
+    now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
