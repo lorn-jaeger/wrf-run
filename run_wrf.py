@@ -83,7 +83,10 @@ def parse_args():
 
     if nml_tmp is None:
         ## Make a default assumption about what namelist template we want to use
-        nml_tmp = 'namelist.input.'+icbc_model.lower()+'.'+exp_name
+        if exp_name is None:
+            nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'
+        else:
+            nml_tmp = 'namelist.input.' + icbc_model.lower() + '.' + exp_name
 
     monitor_wrf = False
     if args.monitor_wrf:
