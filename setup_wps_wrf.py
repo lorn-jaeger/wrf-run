@@ -194,7 +194,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
     ## Date/time manipulation
     cycle_dt_beg = pd.to_datetime(cycle_dt_str_beg, format=fmt_yyyymmdd_hh)
     cycle_dt_end = pd.to_datetime(cycle_dt_str_end, format=fmt_yyyymmdd_hh)
-    cycle_dt_all = pd.date_range(start=cycle_dt_beg, end=cycle_dt_end, freq=str(cycle_int_h)+'H')
+    cycle_dt_all = pd.date_range(start=cycle_dt_beg, end=cycle_dt_end, freq=str(cycle_int_h)+'h')
     n_cycles = len(cycle_dt_all)
 
     ## Check if this cluster uses slurm or pbs
