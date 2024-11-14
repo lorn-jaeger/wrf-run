@@ -243,7 +243,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         ## WPS & WRF namelist templates
         wps_nml_tmp = 'namelist.wps.'+icbc_model.lower()
         if exp_name is None:
-            wrf_nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'
+            wrf_nml_tmp = 'namelist.input.' + icbc_model.lower()
         else:
             wrf_nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'+exp_name
 

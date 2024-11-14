@@ -85,7 +85,7 @@ def parse_args():
     if nml_tmp is None:
         ## Make a default assumption about what namelist template we want to use
         if exp_name is None:
-            nml_tmp = 'namelist.input.' + icbc_model.lower() + '.' + exp_name
+            nml_tmp = 'namelist.input.' + icbc_model.lower()
         else:
             nml_tmp = 'namelist.input.' + icbc_model.lower() + '.' + exp_name
 

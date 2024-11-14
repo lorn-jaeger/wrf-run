@@ -84,7 +84,7 @@ def parse_args():
     if nml_tmp is None:
         ## Make a default assumption about what namelist template we want to use
         if exp_name is None:
-            nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'
+            nml_tmp = 'namelist.input.' + icbc_model.lower()
         else:
             nml_tmp = 'namelist.input.' + icbc_model.lower() + '.' + exp_name
 
@@ -202,7 +202,10 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
         ret,output = exec_command(['rm',file], log, False, False)
 
     ## Submit wrf and get the job ID as a string
-    jobname = 'M' + exp_name[-1] + '_' + str(beg_dy) + '_' + str(beg_hr)
+    if exp_name is None:
+        jobname = 'wrf_' + str(beg_dy) + '_' + str(beg_hr)
+    else:
+        jobname = 'wrf_M' + exp_name[-1] + '_' + str(beg_dy) + '_' + str(beg_hr)
     if scheduler == 'slurm':
         ret,output = exec_command(['sbatch','-J',jobname,'submit_wrf.bash'], log)
         jobid = output.split('job ')[1].split('\\n')[0].strip()
