@@ -5,8 +5,9 @@ setup_wps_wrf.py
 
 Written by: Jared A. Lee (jaredlee@ucar.edu)
 Written on: 31 Mar 2023
+Other contributors: Bill Petzke, Paddy McCarthy
 
-This script links to (and downloads, if necessary) all the files needed to run WPS/WRF on Borah.
+This script links to (and downloads, if necessary) all the files needed to run WPS/WRF on Casper/Derecho.
 Each program in the WPS/WRF workflow can be optionally executed.
 WRF output files can also be optionally moved to an archival directory (arc_dir).
 """
