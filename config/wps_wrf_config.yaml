@@ -1,7 +1,6 @@
 sim_hrs: 12
-exp_name: test
 template_dir: /glade/work/jaredlee/workflow/templates
-wps_ins_dir: /glade/u/home/jaredlee/programs/WPS-4.6-serial
+wps_ins_dir: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar-casper
 wrf_ins_dir: /glade/u/home/jaredlee/programs/WRF-4.6
 wps_run_dir: /glade/derecho/scratch/jaredlee/workflow/wps
 wrf_run_dir: /glade/derecho/scratch/jaredlee/workflow/wrf

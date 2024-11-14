@@ -194,7 +194,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
     ## Date/time manipulation
     cycle_dt_beg = pd.to_datetime(cycle_dt_str_beg, format=fmt_yyyymmdd_hh)
     cycle_dt_end = pd.to_datetime(cycle_dt_str_end, format=fmt_yyyymmdd_hh)
-    cycle_dt_all = pd.date_range(start=cycle_dt_beg, end=cycle_dt_end, freq=str(cycle_int_h)+'H')
+    cycle_dt_all = pd.date_range(start=cycle_dt_beg, end=cycle_dt_end, freq=str(cycle_int_h)+'h')
     n_cycles = len(cycle_dt_all)
 
     ## Check if this cluster uses slurm or pbs
@@ -227,16 +227,25 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
         ## Directories for WPS & WRF where everything should be linked & run
         geo_run_dir = wps_run_dir_parent.joinpath('geogrid')
-        wps_run_dir = wps_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
-        wrf_run_dir = wrf_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
+        if exp_name is None:
+            wps_run_dir = wps_run_dir_parent.joinpath(cycle_yyyymmdd_hh)
+            wrf_run_dir = wrf_run_dir_parent.joinpath(cycle_yyyymmdd_hh)
+            ## Directory for archival
+            arc_dir = arc_dir_parent.joinpath(cycle_yyyymmdd_hh)
+        else:
+            wps_run_dir = wps_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
+            wrf_run_dir = wrf_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
+            ## Directory for archival
+            arc_dir = arc_dir_parent.joinpath(cycle_yyyymmdd_hh, exp_name)
         ## Directories for containing ungrib & metgrid output
         ungrib_dir  = wps_run_dir.joinpath('ungrib')
         metgrid_dir = wps_run_dir.joinpath('metgrid')
-        ## Directory for archival
-        arc_dir = arc_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
         ## WPS & WRF namelist templates
         wps_nml_tmp = 'namelist.wps.'+icbc_model.lower()
-        wrf_nml_tmp = 'namelist.input.'+icbc_model.lower()+'.'+exp_name
+        if exp_name is None:
+            wrf_nml_tmp = 'namelist.input.' + icbc_model.lower()
+        else:
+            wrf_nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'+exp_name
 
         ## Get the icbc model cycle
         ## In real-time applications there may need to be an offset to stay ahead of the clock
@@ -305,6 +314,8 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                     break
 
         if icbc_model == 'GEFS':
+            if exp_name is None:
+                log.error('ERROR! exp_name is None, so a GEFS member number cannot be extracted. Exiting!')
             ## Make an assumption about which GEFS member to download or linked to based on exp_name
             ## Assume it starts with memNN or expNN, and set NN to the GEFS member to get or link to
             if exp_name[0:3] == 'mem' or exp_name[0:3] == 'exp':
@@ -332,27 +343,74 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
             ret,output = exec_command(['python','run_geogrid.py','-w',wps_ins_dir,'-r',geo_run_dir,'-t',template_dir,'-n',wps_nml_tmp,'-q',scheduler],log)
 
         if do_ungrib:
-            ret,output = exec_command(['python','run_ungrib.py','-b',cycle_str,'-s',str(sim_hrs),'-w',wps_ins_dir,'-r',wps_run_dir,'-o',ungrib_dir,'-g',grib_dir,'-t',template_dir,'-m',icbc_model,'-i',str(int_hrs),'-q',scheduler,'-f',str(icbc_fc_dt),'-n',mem_id],log)
+            if mem_id is None:
+                ret, output = exec_command(
+                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir, '-r',
+                     wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model, '-i',
+                     str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt)], log)
+            else:
+                ret,output = exec_command(
+                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir, '-r',
+                     wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model, '-i',
+                     str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-n', mem_id], log)
 
         if do_metgrid:
             ret,output = exec_command(['python','run_metgrid.py','-b',cycle_str,'-s',str(sim_hrs),'-w',wps_ins_dir,'-r',wps_run_dir,'-o',metgrid_dir,'-u',ungrib_dir,'-t',template_dir,'-m',icbc_model,'-q',scheduler],log)
 
         if do_real:
-            ret,output = exec_command(['python','run_real.py','-b',cycle_str,'-s',str(sim_hrs),'-w',wrf_ins_dir,'-r',wrf_run_dir,'-m',metgrid_dir,'-t',template_dir,'-i',icbc_model,'-x',exp_name,'-n',wrf_nml_tmp,'-q',scheduler],log)
+            if exp_name is None:
+                ret, output = exec_command(
+                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r', wrf_run_dir,
+                     '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-q', scheduler], log)
+            else:
+                ret, output = exec_command(
+                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r', wrf_run_dir,
+                     '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp, '-q',
+                     scheduler], log)
 
         if do_wrf:
            if do_upp or arc_wrf:
-               ret,output = exec_command(['python','run_wrf.py','-b',cycle_str,'-s',str(sim_hrs),'-w',wrf_ins_dir,'-r',wrf_run_dir,'-t',template_dir,'-i',icbc_model,'-x',exp_name,'-n',wrf_nml_tmp,'-m','-q',scheduler],log)
+               if exp_name is None:
+                   ret, output = exec_command(
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
+                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-m', '-q', scheduler],
+                        log)
+               else:
+                   ret, output = exec_command(
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
+                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp, '-m',
+                        '-q', scheduler], log)
            else:
-               ret,output = exec_command(['python','run_wrf.py','-b',cycle_str,'-s',str(sim_hrs),'-w',wrf_ins_dir,'-r',wrf_run_dir,'-t',template_dir,'-i',icbc_model,'-x',exp_name,'-n',wrf_nml_tmp,'-q',scheduler],log)
+               if exp_name is None:
+                   ret, output = exec_command(
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
+                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-q', scheduler], log)
+               else:
+                   ret, output = exec_command(
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
+                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp, '-q',
+                        scheduler], log)
 
         if do_upp:
             if upp_domains and len(upp_domains) > 0 and upp_domains[0] > 0:
                 domains_str = str(upp_domains).strip().replace('[', '').replace(']', '').replace(' ', '')
                 log.info(f'Sending domains_str to run_upp: {domains_str}')
-                ret, output = exec_command(['python','run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-x', exp_name, '-d', str(domains_str), '-c', upp_yaml, '-N'], log)
+                if exp_name is None:
+                    ret, output = exec_command(
+                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-d', str(domains_str),
+                         '-c', upp_yaml, '-N'], log)
+                else:
+                    ret, output = exec_command(
+                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-x', exp_name, '-d',
+                         str(domains_str), '-c', upp_yaml, '-N'], log)
             else:
-                ret, output = exec_command(['python','run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-x', exp_name, '-c', upp_yaml, '-N'], log)
+                if exp_name is None:
+                    ret, output = exec_command(
+                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-c', upp_yaml, '-N'], log)
+                else:
+                    ret, output = exec_command(
+                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-x', exp_name, '-c', upp_yaml,
+                         '-N'], log)
 
             # # TODO: Take this out after testing
             # if not upp_yaml.exists():

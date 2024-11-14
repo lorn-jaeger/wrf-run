@@ -113,7 +113,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     cycle_dt = pd.to_datetime(cycle_dt_str, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
     end_dt = beg_dt + dt.timedelta(hours=sim_hrs)
-    all_dt = pd.date_range(start=beg_dt, end=end_dt, freq=str(int_hrs)+'H')
+    all_dt = pd.date_range(start=beg_dt, end=end_dt, freq=str(int_hrs)+'h')
     n_times = len(all_dt)
 
     ## Get the icbc model cycle (in real-time applications there may need to be an offset to stay ahead of the clock)

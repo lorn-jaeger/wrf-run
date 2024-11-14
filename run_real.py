@@ -84,7 +84,10 @@ def parse_args():
 
     if nml_tmp is None:
         ## Make a default assumption about what namelist template we want to use
-        nml_tmp = 'namelist.input.'+icbc_model.lower()+'.'+exp_name
+        if exp_name is None:
+            nml_tmp = 'namelist.input.' + icbc_model.lower()
+        else:
+            nml_tmp = 'namelist.input.' + icbc_model.lower() + '.' + exp_name
 
     return cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_model, exp_name, nml_tmp, scheduler
 
