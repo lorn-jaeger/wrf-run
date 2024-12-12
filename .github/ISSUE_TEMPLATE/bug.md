@@ -50,23 +50,20 @@ Describe the steps to reproduce the behavior:
 - [ ] Select **priority**
 - [ ] Select **requestor(s)**
 
-## Bugfix Checklist (DETAILS TBD - THE INFO BELOW IS NOT YET DECIDED UPON) ##
+## Bugfix Checklist ##
 - [ ] Complete the issue definition above.
-- [ ] Fork this repository or create a branch of **main_\<Version>**.
-Branch name: `bugfix_<Issue Number>_main_<Version>_<Description>`
+- [ ] Fork this repository or create a branch of **main**.
+Branch name: `bugfix_<Issue Number>_main_<Description>`
 - [ ] Fix the bug and test your changes.
 - [ ] Add/update log messages for easier debugging.
 - [ ] Add/update unit tests.
 - [ ] Add/update documentation.
 - [ ] Push local changes to GitHub.
-- [ ] Submit a pull request to merge into **main_\<Version>**.
-Pull request: `bugfix <Issue Number> main_<Version> <Description>`
+- [ ] Submit a pull request to merge into **main**.
+Pull request: `bugfix <Issue Number> main <Description>`
 - [ ] Define the pull request metadata, as permissions allow.
 Select: **Reviewer(s)**
 - [ ] Iterate until the reviewer(s) accept and merge your changes.
 - [ ] Delete your fork or branch.
-- [ ] Complete the steps above to fix the bug on the **dev** branch.
-Branch name:  `bugfix_<Issue Number>_dev_<Description>`
-Pull request: `bugfix <Issue Number> dev <Description>`
 - [ ] Close this issue.
 
