@@ -44,14 +44,14 @@ assignees: ''
 
 ## New Feature Checklist (DETAILS TBD - THE INFO BELOW IS NOT YET DECIDED UPON) ##
 - [ ] Complete the issue definition above.
-- [ ] Fork this repository or create a branch of **dev**.
+- [ ] Fork this repository or create a branch of **main**.
 Branch name: `feature_<Issue Number>_<Description>`
 - [ ] Complete the development and test your changes.
 - [ ] Add/update log messages for easier debugging.
 - [ ] Add/update unit tests.
 - [ ] Add/update documentation.
 - [ ] Push local changes to GitHub.
-- [ ] Submit a pull request to merge into **dev**.
+- [ ] Submit a pull request to merge into **main**.
 Pull request: `feature <Issue Number> <Description>`
 - [ ] Define the pull request metadata, as permissions allow.
 - [ ] Iterate until the reviewer(s) accept and merge your changes.
