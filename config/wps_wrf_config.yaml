@@ -9,10 +9,10 @@ ungrib_domain: full
 icbc_model: GFS
 icbc_source: GLADE
 icbc_fc_dt: 0
-get_icbc: False
+get_icbc: True
 do_geogrid: False
-do_ungrib: False
-do_metgrid: False
+do_ungrib: True
+do_metgrid: True
 do_real: True
 do_wrf: True
 do_upp: False
