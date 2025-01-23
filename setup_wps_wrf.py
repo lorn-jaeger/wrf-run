@@ -270,7 +270,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         elif icbc_model == 'GFS':
             # Full-domain grib directory
 #            grib_dir_full = grib_dir_parent.joinpath('gfs',icbc_cycle_yyyymmdd_hh)
-            grib_dir_full = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}.',icbc_cycle_hr,'atmos')
+            grib_dir_full = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}',icbc_cycle_hr,'atmos')
 
             # Subsetted-domain grib directory
             grib_dir_subset = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}.subset',icbc_cycle_hr,'atmos')
