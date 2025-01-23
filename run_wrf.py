@@ -11,7 +11,6 @@ This script is designed to run wrf.exe as a batch job.
 
 import os
 import sys
-import subprocess
 import shutil
 import argparse
 import pathlib
@@ -46,6 +45,7 @@ def parse_args():
     parser.add_argument('-n', '--nml_tmp', default=None, help='string for filename of namelist template (default: namelist.input.icbc_model.exp_name, with icbc_model in lower-case)')
     parser.add_argument('-m', '--monitor_wrf', help='flag to keep the script active as long as wrf.exe is submitted/running on the cluster (True if flag present, False if not present)', action='store_true')
     parser.add_argument('-q', '--scheduler', default='pbs', help='string specifying the cluster job scheduler (default: pbs)')
+    parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -57,6 +57,7 @@ def parse_args():
     exp_name = args.exp_name
     nml_tmp = args.nml_tmp
     scheduler = args.scheduler
+    hostname = args.hostname
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
         print('ERROR! Incorrect format for argument cycle_dt_beg in call to run_real.py. Exiting!')
@@ -92,9 +93,9 @@ def parse_args():
     if args.monitor_wrf:
         monitor_wrf = True
 
-    return cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler
+    return cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler, hostname
 
-def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler):
+def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler, hostname):
 
     log.info(f'Running run_wrf.py from directory: {curr_dir}')
 
@@ -136,7 +137,13 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
     pathlib.Path('namelist.input').unlink()
 
     ## Copy over the wrf batch script
-    shutil.copy(tmp_dir.joinpath('submit_wrf.bash'), 'submit_wrf.bash')
+    # Add special handling for derecho & casper, since peer scheduling is possible
+    if hostname == 'derecho':
+        shutil.copy(tmp_dir.joinpath('submit_wrf.bash.derecho'), 'submit_wrf.bash')
+    elif hostname == 'casper':
+        shutil.copy(tmp_dir.joinpath('submit_wrf.bash.casper'), 'submit_wrf.bash')
+    else:
+        shutil.copy(tmp_dir.joinpath('submit_wrf.bash'), 'submit_wrf.bash')
 
     ## Copy over the default namelist
     shutil.copy(tmp_dir.joinpath(nml_tmp), 'namelist.input.template')
@@ -289,8 +296,8 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.utcnow()
-    cycle_dt, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler = parse_args()
-    main(cycle_dt, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler)
+    cycle_dt, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler, hostname = parse_args()
+    main(cycle_dt, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name, nml_tmp, monitor_wrf, scheduler, hostname)
     now_time_end = dt.datetime.utcnow()
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')

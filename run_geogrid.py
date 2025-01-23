@@ -11,14 +11,12 @@ This script is designed to run geogrid.exe as a batch job and wait for its compl
 
 import os
 import sys
-import subprocess
 import argparse
 import pathlib
 import glob
 import time
 import shutil
 import datetime as dt
-import pandas as pd
 import logging
 from proc_util import exec_command
 
@@ -39,6 +37,7 @@ def parse_args():
 	parser.add_argument('-t', '--tmp_dir', default=None, help='string or pathlib.Path object that hosts namelist & queue submission script templates')
 	parser.add_argument('-n', '--nml_tmp', default=None, help='string for filename of namelist template (default: namelist.wps)')
 	parser.add_argument('-q', '--scheduler', default='pbs', help='string specifying the cluster job scheduler (default: pbs)')
+	parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
 
 	args = parser.parse_args()
 	wps_dir = args.wps_dir
@@ -46,6 +45,7 @@ def parse_args():
 	tmp_dir = args.tmp_dir
 	nml_tmp = args.nml_tmp
 	scheduler = args.scheduler
+	hostname = args.hostname
 
 	if wps_dir is not None:
 		wps_dir = pathlib.Path(wps_dir)
@@ -69,9 +69,9 @@ def parse_args():
 		## Make a default assumption about what namelist template we want to use
 		nml_tmp = 'namelist.wps'
 
-	return wps_dir, run_dir, tmp_dir, nml_tmp, scheduler
+	return wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname
 
-def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler):
+def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 
 	## Create the run directory if it doesn't already exist
 	run_dir.mkdir(parents=True, exist_ok=True)
@@ -85,7 +85,14 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler):
 	pathlib.Path('geogrid.exe').symlink_to(wps_dir.joinpath('geogrid.exe'))
 
 	## Copy over the geogrid batch script
-	shutil.copy(tmp_dir.joinpath('submit_geogrid.bash'), 'submit_geogrid.bash')
+	# Add special handling for derecho & casper, since peer scheduling is possible
+	if hostname == 'derecho':
+		shutil.copy(tmp_dir.joinpath('submit_geogrid.bash.derecho'), 'submit_geogrid.bash')
+	elif hostname == 'casper':
+		shutil.copy(tmp_dir.joinpath('submit_geogrid.bash.casper'), 'submit_geogrid.bash')
+	else:
+		shutil.copy(tmp_dir.joinpath('submit_geogrid.bash'), 'submit_geogrid.bash')
+
 
 	## Copy over the default namelist
 	shutil.copy(tmp_dir.joinpath(nml_tmp), 'namelist.wps')
@@ -144,8 +151,8 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler):
 
 if __name__ == '__main__':
 	now_time_beg = dt.datetime.utcnow()
-	wps_dir, run_dir, tmp_dir, nml_tmp, scheduler = parse_args()
-	main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler)
+	wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname = parse_args()
+	main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname)
 	now_time_end = dt.datetime.utcnow()
 	run_time_tot = now_time_end - now_time_beg
 	now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')

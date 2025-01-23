@@ -14,11 +14,11 @@ import sys
 import argparse
 import pathlib
 import datetime as dt
+from urllib.error import HTTPError
 import numpy as np
 import pandas as pd
 import wget
 import logging
-
 from proc_util import exec_command
 
 this_file = os.path.basename(__file__)
@@ -122,8 +122,9 @@ def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, resolution, now_time_beg, i
             try:
                 wget.download(url)
                 log.info('')
-            except:
-                wget_error(str(e), now_time_beg)
+            except HTTPError:
+                err_msg = 'HTTP Error 404: Not Found: ' + url
+                wget_error(str(err_msg), now_time_beg)
         else:
             log.info('   File '+fname+' already exists locally. Not downloading again from server.')
 

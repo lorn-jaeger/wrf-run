@@ -44,11 +44,13 @@ def parse_args():
     parser.add_argument('-o', '--out_dir', default=None, help='string or pathlib.Path object of the ungrib output directory (default: run_dir/ungrib)')
     parser.add_argument('-g', '--grib_dir', default=None, help='string or pathlib.Path object that hosts the grib/grib2 data to be ungribbed')
     parser.add_argument('-t', '--temp_dir', default=None, help='string or pathlib.Path object that hosts namelist & queue submission script templates')
+    parser.add_argument('-c', '--icbc_source', default='GLADE', help='string specifying the repository from which to obtain ICs/LBCs (GLADE [default], AWS, GoogleCloud, NOMADS)')
     parser.add_argument('-m', '--icbc_model', default='GEFS', help='string specifying the IC/LBC model (default: GEFS)')
     parser.add_argument('-f', '--icbc_fc_dt', default=0, type=int, help='integer number of hours prior to WRF cycle time for IC/LBC model cycle (default: 0)')
     parser.add_argument('-i', '--int_hrs', default=3, type=int, help='integer number of hours between IC/LBC files (default: 3)')
     parser.add_argument('-q', '--scheduler', default='pbs', help='string specifying the cluster job scheduler (default: pbs)')
     parser.add_argument('-n', '--mem_id', default=None, help='string specifying the numeric id (with any necessary leading zeros) of the GEFS or other ensemble member so that ./link_grib.csh can link to the correct file (default: None)')
+    parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -58,11 +60,13 @@ def parse_args():
     out_dir = args.out_dir
     grib_dir = args.grib_dir
     temp_dir = args.temp_dir
+    icbc_source = args.icbc_source
     icbc_model = args.icbc_model
     icbc_fc_dt = args.icbc_fc_dt
     int_hrs = args.int_hrs
     scheduler = args.scheduler
     mem_id = args.mem_id
+    hostname = args.hostname
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
         print('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
@@ -99,12 +103,13 @@ def parse_args():
         print('ERROR! temp_dir is not specified as an argument in call to run_ungrib.py. Exiting!')
         sys.exit(1)
 
-    return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id
+    return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname
 
-def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id):
+def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname):
 
     log.info(f'Running run_ungrib.py from directory: {curr_dir}')
 
+    fmt_yyyymmddhh = '%Y%m%d%H'
     fmt_yyyymmdd_hh = '%Y%m%d_%H'
     fmt_yyyymmdd_hhmm = '%Y%m%d_%H%M'
     fmt_wrf_dt = '%Y-%m-%d_%H:%M:%S'
@@ -118,6 +123,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
     ## Get the icbc model cycle (in real-time applications there may need to be an offset to stay ahead of the clock)
     icbc_cycle_dt = cycle_dt - dt.timedelta(hours=icbc_fc_dt)
+    icbc_cycle_datehh = icbc_cycle_dt.strftime(fmt_yyyymmddhh)
     icbc_cycle_hr = icbc_cycle_dt.strftime('%H')
 
     ## Create the run directory if it doesn't already exist
@@ -176,7 +182,13 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         pathlib.Path('link_grib.csh').symlink_to(wps_dir.joinpath('link_grib.csh'))
 
         ## Copy over the ungrib batch script
-        shutil.copy(temp_dir.joinpath('submit_ungrib.bash'), 'submit_ungrib.bash')
+        # Add special handling for derecho & casper, since peer scheduling is possible
+        if hostname == 'derecho':
+            shutil.copy(temp_dir.joinpath('submit_ungrib.bash.derecho'), 'submit_ungrib.bash')
+        elif hostname == 'casper':
+            shutil.copy(temp_dir.joinpath('submit_ungrib.bash.casper'), 'submit_ungrib.bash')
+        else:
+            shutil.copy(temp_dir.joinpath('submit_ungrib.bash'), 'submit_ungrib.bash')
 
         ## Link to the correct Vtable, grib/grib2 files, and copy in a namelist template
         ## (Add other elif options here as needed)
@@ -186,7 +198,14 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             pathlib.Path('namelist.wps').unlink()
         if icbc_model == 'GFS' or icbc_model == 'gfs':
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFS'))
-            ret,output = exec_command(['./link_grib.csh',str(grib_dir)+'/*t'+icbc_cycle_hr+'z.pgrb2.0p25.f*'],log)
+            if icbc_source == 'GLADE' or icbc_source == 'glade':
+                file_pattern = str(grib_dir) + '/gfs.0p25.' + icbc_cycle_datehh + '.f*'
+            elif icbc_source == 'AWS' or icbc_source == 'aws':
+                file_pattern = str(grib_dir) + '/*t' + icbc_cycle_hr + 'z.pgrb2.0p25.f*'
+            else:
+                log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS in run_ungrib.py. Exiting!')
+                sys.exit(1)
+            ret,output = exec_command(['./link_grib.csh', file_pattern],log)
             shutil.copy(temp_dir.joinpath('namelist.wps.gfs'), 'namelist.wps.template')
         elif icbc_model == 'GEFS' or icbc_model == 'gefs':
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFSENS'))
@@ -332,7 +351,13 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             pathlib.Path('link_grib.csh').symlink_to(wps_dir.joinpath('link_grib.csh'))
 
             ## Copy over the ungrib submission script
-            shutil.copy(temp_dir.joinpath('submit_ungrib.bash'), 'submit_ungrib.bash')
+            # Add special handling for derecho & casper, since peer scheduling is possible
+            if hostname == 'derecho':
+                shutil.copy(temp_dir.joinpath('submit_ungrib.bash.derecho'), 'submit_ungrib.bash')
+            elif hostname == 'casper':
+                shutil.copy(temp_dir.joinpath('submit_ungrib.bash.casper'), 'submit_ungrib.bash')
+            else:
+                shutil.copy(temp_dir.joinpath('submit_ungrib.bash'), 'submit_ungrib.bash')
 
             ## Link to the correct Vtable, grib/grib2 files, and copy in a namelist template
             if pathlib.Path('Vtable').is_symlink():
@@ -452,8 +477,8 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.utcnow()
-    cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id = parse_args()
-    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id)
+    cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname = parse_args()
+    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname)
     now_time_end = dt.datetime.utcnow()
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
