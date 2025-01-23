@@ -16,16 +16,13 @@ import os
 import sys
 import argparse
 import pathlib
-import shutil
 import datetime as dt
-import numpy as np
 import pandas as pd
-import time
 import logging
 import yaml
-import json
 import subprocess
 import glob
+import socket
 from argparse import RawTextHelpFormatter
 
 from proc_util import exec_command
@@ -43,7 +40,8 @@ def parse_args():
      'exp_name': 'experiment name (e.g., exp01, mem01, etc.) (default: None)',
      'realtime': 'flag when running in real-time to keep this script running until WRF is done',
      'archive': 'flag to archive wrfout, wrfinput, wrfbdy, and namelist files to another location',
-     'icbc_model': 'string specifying the model to be used for ICs/LBCs (deafult: GEFS)',
+     'icbc_model': 'string specifying the model to be used for ICs/LBCs (default: GEFS)',
+     'icbc_source': 'string specifying the repository from which to obtain ICs/LBCs (GLADE, AWS, GoogleCloud, NOMADS) (default: GLADE)',
      'grib_dir': 'string or Path object specifying the parent directory for where grib/grib2 input data (e.g., GEFS, GFS, etc.) is downloaded for use by ungrib (default: /glade/derecho/scratch/jaredlee/data',
      'ungrib_domain': 'string (either "full" or "subset") indicating whether to run ungrib on full-domain or geographically-subsetted grib/grib2 files (default: full)',
      'wps_ins_dir': 'string or Path object specifying the WPS installation directory (default: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar)',
@@ -88,6 +86,17 @@ def parse_args():
     else:
         cycle_dt_end = cycle_dt_beg
 
+    # Get the hostname. If an NCAR HPC machine (derecho or casper), then we can link to IC/LBC data on GLADE.
+    # As derecho and casper allow cross-submitting jobs, then the appropriate PBS job script can be selected,
+    # which would allow users to seamlessly run this workflow on either derecho or casper.
+    hostname = socket.gethostname()
+    # Simplify the hostnames for derecho & casper, which have a single numeral as the final character.
+    # If other hostnames in the future need to be simplified similarly, add another elif branch here.
+    if hostname[0:-1] == 'derecho':
+        hostname = 'derecho'
+    elif hostname[0:-1] == 'casper-login':
+        hostname = 'casper'
+
     with open(args.config) as yaml_f:
         params = yaml.safe_load(yaml_f)
     log.info(f"yaml params: {params}")
@@ -99,6 +108,7 @@ def parse_args():
     params.setdefault('archive', False)
     params.setdefault('ungrib_domain', 'full')
     params.setdefault('icbc_model', 'GFS')
+    params.setdefault('icbc_source', 'GLADE')
     params.setdefault('grib_dir', '/glade/derecho/scratch/jaredlee/data')
     params.setdefault('wps_ins_dir', '/glade/u/home/jaredlee/programs/WPS-4.6-dmpar')
     params.setdefault('wrf_ins_dir', '/glade/u/home/jaredlee/programs/WRF-4.6')
@@ -118,8 +128,10 @@ def parse_args():
     params.setdefault('do_wrf', False)
     params.setdefault('do_upp', False)
 
+    params['hostname'] = hostname
     params['grib_dir_parent'] = pathlib.Path(params['grib_dir'])
     del params['grib_dir']
+    params['icbc_source'] = params['icbc_source']
     params['icbc_model'] = params['icbc_model']
     params['icbc_fc_dt'] = params['icbc_fc_dt']
     params['ungrib_domain'] = params['ungrib_domain']
@@ -149,7 +161,9 @@ def parse_args():
 
     return params
 
-def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, exp_name, realtime, archive, now_time_beg, icbc_model, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir, wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
+def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, exp_name, realtime, archive, hostname,
+         now_time_beg, icbc_model, icbc_source, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir,
+         wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
          upp_working_dir, upp_yaml, upp_domains,
          get_icbc, do_geogrid, do_ungrib, do_metgrid, do_real, do_wrf, do_upp):
 
@@ -260,6 +274,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         icbc_cycle_str = icbc_cycle_yyyymmdd_hh
 
         ## Local directory where ICs/LBC grib2 files should be downloaded
+        # Model directory structure & naming conventions to mimic AWS, rather than GLADE or GoogleCloud
         if icbc_model == 'GEFS':
             # Full-domain grib directory
 #            grib_dir_full = grib_dir_parent.joinpath('gefs',icbc_cycle_yyyymmdd_hh,exp_name)
@@ -335,62 +350,91 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
             mem_id = None
 
         if get_icbc:
-            if icbc_model == 'GFS':
-                ret,output = exec_command(['python','download_gfs_from_aws.py','-b',icbc_cycle_str,'-s',str(sim_hrs),'-o',grib_dir_full],log)
-            elif icbc_model == 'GEFS':
-                ret,output = exec_command(['python','download_gefs_from_aws.py','-b',icbc_cycle_str,'-s',str(sim_hrs),'-m',mem_id,'-o',grib_dir_full,'-f',str(icbc_fc_dt)],log)
+            # If an ICBC dataset is locally available on GLADE, use that instead of downloading from an external repo
+            if icbc_model == 'GFS' or icbc_model == 'gfs':
+                if icbc_source == 'GLADE' or icbc_source == 'glade':
+                    ret,output = exec_command(
+                        ['python', 'link_gfs_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                         '-i', str(int_hrs), '-o', grib_dir_full], log)
+                elif icbc_source == 'AWS' or icbc_source == 'aws':
+                    ret,output = exec_command(
+                        ['python', 'download_gfs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                         '-i', str(int_hrs), '-o', grib_dir_full], log)
+                else:
+                    log.error('ERROR: No option yet to download or link to GFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py. Exiting!')
+                    sys.exit(1)
+            elif icbc_model == 'GEFS' or icbc_model == 'gefs':
+                if icbc_source == 'GLADE' or icbc_source == 'glade':
+                    log.error('There is no known dataset containing GEFS files on GLADE. Change icbc_source. Exiting!')
+                    sys.exit(1)
+                elif icbc_source == 'AWS' or icbc_source == 'aws':
+                    ret,output = exec_command(
+                        ['python', 'download_gefs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                         '-i', str(int_hrs), '-m', mem_id, '-o', grib_dir_full, '-f', str(icbc_fc_dt)], log)
+                else:
+                    log.error('ERROR: No option yet to download or link to GEFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py. Exiting!')
+                    sys.exit(1)
 
         if do_geogrid:
-            ret,output = exec_command(['python','run_geogrid.py','-w',wps_ins_dir,'-r',geo_run_dir,'-t',template_dir,'-n',wps_nml_tmp,'-q',scheduler],log)
+            ret,output = exec_command(
+                ['python', 'run_geogrid.py', '-w', wps_ins_dir, '-r', geo_run_dir, '-t', template_dir,
+                 '-n', wps_nml_tmp, '-q', scheduler, '-a', hostname], log)
 
         if do_ungrib:
             if mem_id is None:
                 ret, output = exec_command(
-                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir, '-r',
-                     wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model, '-i',
-                     str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt)], log)
+                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
+                     '-r', wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model,
+                     '-i', str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-a', hostname, '-c', icbc_source],
+                    log)
             else:
                 ret,output = exec_command(
-                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir, '-r',
-                     wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model, '-i',
-                     str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-n', mem_id], log)
+                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
+                     '-r', wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model,
+                     '-i', str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-a', hostname, '-c', icbc_source,
+                     '-n', mem_id], log)
 
         if do_metgrid:
-            ret,output = exec_command(['python','run_metgrid.py','-b',cycle_str,'-s',str(sim_hrs),'-w',wps_ins_dir,'-r',wps_run_dir,'-o',metgrid_dir,'-u',ungrib_dir,'-t',template_dir,'-m',icbc_model,'-q',scheduler],log)
+            ret,output = exec_command(
+                ['python', 'run_metgrid.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
+                 '-r', wps_run_dir, '-o', metgrid_dir, '-u', ungrib_dir, '-t', template_dir, '-m', icbc_model,
+                 '-q', scheduler, '-a', hostname], log)
 
         if do_real:
             if exp_name is None:
                 ret, output = exec_command(
-                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r', wrf_run_dir,
-                     '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-q', scheduler], log)
+                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+                     '-r', wrf_run_dir, '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp,
+                     '-q', scheduler, '-a', hostname], log)
             else:
                 ret, output = exec_command(
-                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r', wrf_run_dir,
-                     '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp, '-q',
-                     scheduler], log)
+                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+                     '-r', wrf_run_dir, '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name,
+                     '-n', wrf_nml_tmp, '-q', scheduler, '-a', hostname], log)
 
         if do_wrf:
            if do_upp or arc_wrf:
                if exp_name is None:
                    ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
-                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-m', '-q', scheduler],
-                        log)
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-m',
+                        '-q', scheduler, '-a', hostname], log)
                else:
                    ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
-                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp, '-m',
-                        '-q', scheduler], log)
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp,
+                        '-m', '-q', scheduler, '-a', hostname], log)
            else:
                if exp_name is None:
                    ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
-                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-q', scheduler], log)
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-q', scheduler,
+                        '-a', hostname], log)
                else:
                    ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir, '-r',
-                        wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp, '-q',
-                        scheduler], log)
+                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp,
+                        '-q', scheduler, '-a', hostname], log)
 
         if do_upp:
             if upp_domains and len(upp_domains) > 0 and upp_domains[0] > 0:

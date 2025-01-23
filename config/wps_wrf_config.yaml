@@ -4,9 +4,10 @@ wps_ins_dir: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar-casper
 wrf_ins_dir: /glade/u/home/jaredlee/programs/WRF-4.6
 wps_run_dir: /glade/derecho/scratch/jaredlee/workflow/wps
 wrf_run_dir: /glade/derecho/scratch/jaredlee/workflow/wrf
-grib_dir: /glade/derecho/scratch/jaredlee/data
+grib_dir: /glade/derecho/scratch/jaredlee/data/gfs
 ungrib_domain: full
 icbc_model: GFS
+icbc_source: GLADE
 icbc_fc_dt: 0
 get_icbc: True
 do_geogrid: False

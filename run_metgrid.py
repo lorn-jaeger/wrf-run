@@ -11,7 +11,6 @@ This script is designed to run metgrid.exe as a batch job and wait for its compl
 
 import os
 import sys
-import subprocess
 import shutil
 import argparse
 import pathlib
@@ -46,6 +45,7 @@ def parse_args():
     parser.add_argument('-m', '--icbc_model', default='GEFS', help='string specifying the IC/LBC model (default: GEFS)')
     parser.add_argument('-n', '--nml_tmp', default=None, help='string for filename of namelist template (default: namelist.wps.icbc_model, with icbc_model in lower-case)')
     parser.add_argument('-q', '--scheduler', default='pbs', help='string specifying the cluster job scheduler (default: pbs)')
+    parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -58,6 +58,7 @@ def parse_args():
     icbc_model = args.icbc_model
     nml_tmp = args.nml_tmp
     scheduler = args.scheduler
+    hostname = args.hostname
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
         print('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
@@ -98,9 +99,9 @@ def parse_args():
         ## Make a default assumption about what namelist template we want to use
         nml_tmp = 'namelist.wps.'+icbc_model.lower()
 
-    return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler
+    return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname
 
-def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler):
+def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname):
 
     log.info(f'Running run_metgrid.py from directory: {curr_dir}')
 
@@ -129,7 +130,13 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
     pathlib.Path('metgrid.exe').symlink_to(wps_dir.joinpath('metgrid.exe'))
 
     ## Copy over the metgrid batch script
-    shutil.copy(tmp_dir.joinpath('submit_metgrid.bash'), 'submit_metgrid.bash')
+    # Add special handling for derecho & casper, since peer scheduling is possible
+    if hostname == 'derecho':
+        shutil.copy(tmp_dir.joinpath('submit_metgrid.bash.derecho'), 'submit_metgrid.bash')
+    elif hostname == 'casper':
+        shutil.copy(tmp_dir.joinpath('submit_metgrid.bash.casper'), 'submit_metgrid.bash')
+    else:
+        shutil.copy(tmp_dir.joinpath('submit_metgrid.bash'), 'submit_metgrid.bash')
 
     ## Copy over the default namelist
     shutil.copy(tmp_dir.joinpath(nml_tmp), 'namelist.wps.template')
@@ -212,8 +219,8 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.utcnow()
-    cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler = parse_args()
-    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler)
+    cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname = parse_args()
+    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname)
     now_time_end = dt.datetime.utcnow()
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
