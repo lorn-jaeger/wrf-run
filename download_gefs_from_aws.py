@@ -204,10 +204,10 @@ def main(cycle_dt_str, sim_hrs, members, out_dir_parent, icbc_fc_dt, now_time_be
 
 
 if __name__ == '__main__':
-    now_time_beg = dt.datetime.utcnow()
+    now_time_beg = dt.datetime.now(dt.UTC)
     cycle_dt, sim_hrs, members, out_dir_parent, icbc_fc_dt, int_h = parse_args()
     main(cycle_dt, sim_hrs, members, out_dir_parent, icbc_fc_dt, now_time_beg, int_h)
-    now_time_end = dt.datetime.utcnow()
+    now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
