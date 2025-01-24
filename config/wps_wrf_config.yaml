@@ -19,3 +19,4 @@ do_upp: False
 upp_yaml: /glade/work/jaredlee/workflow/templates/run_upp.yaml
 upp_domains:
   - '1'
+archive: True
