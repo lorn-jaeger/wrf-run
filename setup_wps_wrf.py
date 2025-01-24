@@ -146,6 +146,7 @@ def parse_args():
     del params['arc_dir']
     params['upp_working_dir'] = pathlib.Path(params['upp_working_dir'])
     params['upp_yaml'] = pathlib.Path(params['upp_yaml'])
+    params['archive'] = params['archive']
 
     # Check upp_domains and convert to int if possible.
     for idx, domain in enumerate(params['upp_domains']):
@@ -166,38 +167,6 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
          wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
          upp_working_dir, upp_yaml, upp_domains,
          get_icbc, do_geogrid, do_ungrib, do_metgrid, do_real, do_wrf, do_upp):
-
-    project = 'IPC'
-
-    # ## Initially define a bunch of boolean variables
-    # ## Each project section below may set some of these to True (or eventually make these command-line parameters as well)
-    # ## With increasing functionality for controlling additional processes in WPS/WRF configurations, add more options here
-    # get_icbc   = False  # Download/link to IC/BC grib data?
-    # do_geogrid = False  # Run geogrid for this case?
-    # do_ungrib  = False  # Run ungrib for this case?
-    # do_metgrid = False  # Run metgrid for this case?
-    # do_real    = False  # Run real for this case?
-    # do_wrf     = False  # Submit wrf for this case?
-    # do_upp     = False  # Perform UPP post-processing to grib2 for this case?
-    arc_wrf    = False  # Archive wrfout, wrfinput, wrfbdy, & namelist files for this case?
-
-    # ## Making this script flexible to set options for multiple projects/instances of WRF
-    # if project == 'IPC':
-    #     do_geogrid = False
-    #     do_ungrib  = False
-    #     do_metgrid = True
-    #     do_real    = False
-    #     do_wrf     = False
-
-    ## If the archive flag was included in the command line, then just do that
-    if archive:
-        get_icbc   = False
-        do_geogrid = False
-        do_ungrib  = False
-        do_metgrid = False
-        do_real    = False
-        do_wrf     = False
-        arc_wrf    = True
 
     ## String format statements
     fmt_exp_dir        = '%Y-%m-%d_%H'
@@ -413,7 +382,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                      '-n', wrf_nml_tmp, '-q', scheduler, '-a', hostname], log)
 
         if do_wrf:
-           if do_upp or arc_wrf:
+           if do_upp or archive:
                if exp_name is None:
                    ret, output = exec_command(
                        ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
@@ -480,29 +449,27 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         if archive:
             arc_dir.joinpath('config').mkdir(exist_ok=True, parents=True)
             arc_dir.joinpath('wrfout').mkdir(exist_ok=True, parents=True)
+            os.chdir(wps_run_dir)
+            # subprocess.run cannot handle wildcards, so we need to iterate over matching files in calls to exec_command
+            log.info('Copying namelist.wps to ' + str(arc_dir.joinpath('config')))
+            ret,output = exec_command(['cp', 'namelist.wps', str(arc_dir.joinpath('config'))], log)
             os.chdir(wrf_run_dir)
-            log.info('Moving namelist, wrfinput, wrfbdy, etc., to '+str(arc_dir.joinpath('config')))
-            ret,output = exec_command(['mv','namelist.input',str(arc_dir.joinpath('config'))],log)
-            ## subprocess.run cannot handle wildcards, so we need to iterate over matching files
-#            ret,output = exec_command(['mv','wrfinput_d*',str(arc_dir.joinpath('config'))],log)
+            log.info('Copying namelist.input to '+str(arc_dir.joinpath('config')))
+            ret,output = exec_command(['cp','namelist.input',str(arc_dir.joinpath('config'))],log)
+            log.info('Copying wrfinput* and wrfbdy* files to ' + str(arc_dir.joinpath('config')))
             files = glob.glob('wrfinput_d0*')
             for file in files:
-                ret,output = exec_command(['mv',file,str(arc_dir.joinpath('config'))],log)
-#            ret,output = exec_command(['mv','wrfbdy_d*',str(arc_dir.joinpath('config'))],log)
+                ret,output = exec_command(['cp',file,str(arc_dir.joinpath('config'))],log)
             files = glob.glob('wrfbdy_d*')
             for file in files:
                 ret,output = exec_command(['mv',file,str(arc_dir.joinpath('config'))],log)
-            log.info('Moving wrfout, etc., to '+str(arc_dir.joinpath('wrfout')))
-#            ret,output = exec_command(['mv','wrfout*',str(arc_dir.joinpath('wrfout'))],log)
+            log.info('Moving wrfout* and wrfxtrm* files to '+str(arc_dir.joinpath('wrfout')))
             files = glob.glob('wrfout*')
             for file in files:
                 ret,output = exec_command(['mv',file,str(arc_dir.joinpath('wrfout'))],log)
-            if project == 'IPC':
-#                ret,output = exec_command(['mv','wrfxtrm*',str(arc_dir.joinpath('wrfout'))],log)
-                files = glob.glob('wrfxtrm*')
-                for file in files:
-                    ret,output = exec_command(['mv',file,str(arc_dir.joinpath('wrfout'))],log)
-            
+            files = glob.glob('wrfxtrm*')
+            for file in files:
+                ret,output = exec_command(['mv', file, str(arc_dir.joinpath('wrfout'))], log)
 
 
 if __name__ == '__main__':
