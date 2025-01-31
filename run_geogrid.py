@@ -100,24 +100,34 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 	## Clean up old geogrid log files
 	files = glob.glob('geogrid.log*')
 	for file in files:
-		ret,output = exec_command(['rm',file], log, False, False)
-	files = glob.glob('log_geogrid.*')
+		ret,output = exec_command(['rm', file], log, False, False)
+	files = glob.glob('geogrid.e[0-9]*')
 	for file in files:
-		ret,output = exec_command(['rm',file], log, False, False)
-	files = glob.glob('geogrid.o*')
+		ret, output = exec_command(['rm', file], log, False, False)
+	files = glob.glob('geogrid.o[0-9]*')
 	for file in files:
-		ret,output = exec_command(['rm',file], log, False, False)
+		ret, output = exec_command(['rm', file], log, False, False)
+	files = glob.glob('log_geogrid.e[0-9]*')
+	for file in files:
+		ret, output = exec_command(['rm', file], log, False, False)
+	files = glob.glob('log_geogrid.o[0-9]*')
+	for file in files:
+		ret, output = exec_command(['rm', file], log, False, False)
 
 	## Submit geogrid and get the job ID as a string
 	if scheduler == 'slurm':
 		ret,output = exec_command(['sbatch','submit_geogrid.bash'], log, False)
 		jobid = output.split('job ')[1].split('\\n')[0].strip()
 		log.info('Submitted batch job '+jobid)
+		job_log_filename = 'log_geogrid.o' + jobid
+		job_err_filename = 'log_geogrid.e' + jobid
 	elif scheduler == 'pbs':
 		ret,output = exec_command(['qsub','submit_geogrid.bash'], log, False)
 		jobid = output.split('.')[0]
 		queue = output.split('.')[1]
 		log.info('Submitted batch job '+jobid+' to queue '+queue)
+		job_log_filename = 'geogrid.o' + jobid
+		job_err_filename = 'geogrid.e' + jobid
 	time.sleep(long_time)	# give the file system a moment
 
 	## Monitor the progress of geogrid
@@ -131,20 +141,30 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 	status = False
 	while not status:
 		if '*** Successful completion of program geogrid.exe ***' in open('geogrid.log.0000').read():
-			log.info('   SUCCESS! geogrid completed successfully.')
+			log.info('SUCCESS! geogrid completed successfully.')
 			time.sleep(short_time)  # brief pause to let the file system gather itself
 			status = True
 		else:
 			## May need to add other error keywords to search for...
-			if 'FATAL' in open('geogrid.log.0000').read() or 'Fatal' in open('geogrid.log.0000').read() or 'ERROR' in open('geogrid.log.0000').read():
-				log.error('   ERROR: geogrid.exe failed.')
-				log.error('   Consult '+str(run_dir)+'/geogrid.log.0000 for potential error messages.')
-				log.error('   Exiting!')
+			if ('FATAL' in open('geogrid.log.0000').read() or 'Fatal' in open('geogrid.log.0000').read() or
+					'ERROR' in open('geogrid.log.0000').read()):
+				log.error('ERROR: geogrid.exe failed.')
+				log.error('Consult ' + str(run_dir) + '/geogrid.log.0000 for potential error messages.')
+				log.error('Exiting!')
 				sys.exit(1)
-			elif 'BAD TERMINATION' in open('log_geogrid.o'+jobid).read() or 'ERROR' in open('log_geogrid.o'+jobid).read():
-				log.error('   ERROR: geogrid.exe failed.')
-				log.error('   Consult '+str(run_dir)+'/log_geogrid.o'+jobid+' for potential error messages.')
-				log.error('   Exiting!')
+			elif (os.path.exists(job_log_filename) and
+				  ('BAD TERMINATION' in open(job_log_filename).read() or 'ERROR' in open(job_log_filename).read() or
+				   ('FATAL' in open(job_log_filename).read()) or ('fatal' in open(job_log_filename).read()))):
+				log.error('ERROR: geogrid.exe failed.')
+				log.error('Consult ' + str(run_dir) + '/' + job_log_filename + ' for potential error messages.')
+				log.error('Exiting!')
+				sys.exit(1)
+			elif (os.path.exists(job_err_filename) and
+				  ('BAD TERMINATION' in open(job_err_filename).read() or 'ERROR' in open(job_err_filename).read() or
+				   ('FATAL' in open(job_err_filename).read()) or ('fatal' in open(job_err_filename).read()))):
+				log.error('ERROR: geogrid.exe failed.')
+				log.error('Consult ' + str(run_dir) + '/' + job_err_filename + ' for potential error messages.')
+				log.error('Exiting!')
 				sys.exit(1)
 			time.sleep(long_time)
 

@@ -161,13 +161,19 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
     ## Clean up old metgrid log files
     files = glob.glob('metgrid.log*')
     for file in files:
-        ret,output = exec_command(['rm',file], log, False, False)
-    files = glob.glob('log_metgrid.o*')
+        ret,output = exec_command(['rm', file], log, False, False)
+    files = glob.glob('metgrid.e[0-9]*')
     for file in files:
-        ret,output = exec_command(['rm',file], log, False, False)
-    files = glob.glob('metgrid.o*')
+        ret,output = exec_command(['rm', file], log, False, False)
+    files = glob.glob('metgrid.o[0-9]*')
     for file in files:
-        ret,output = exec_command(['rm',file], log, False, False)
+        ret,output = exec_command(['rm', file], log, False, False)
+    files = glob.glob('log_metgrid.e[0-9]*')
+    for file in files:
+        ret, output = exec_command(['rm', file], log, False, False)
+    files = glob.glob('log_metgrid.o[0-9]*')
+    for file in files:
+        ret, output = exec_command(['rm', file], log, False, False)
 
     ## Submit metgrid and get the job ID as a string
     if scheduler == 'slurm':
@@ -175,12 +181,14 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
         jobid = output.split('job ')[1].split('\\n')[0].strip()
         log.info('Submitted batch job '+jobid)
         job_log_filename = 'log_metgrid.o' + jobid
+        job_err_filename = 'log_metgrid.e' + jobid
     elif scheduler == 'pbs':
         ret,output = exec_command(['qsub','submit_metgrid.bash'], log, False)
         jobid = output.split('.')[0]
         queue = output.split('.')[1]
         log.info('Submitted batch job '+jobid+' to queue '+queue)
-        job_log_filename = 'metgrid.o'+jobid
+        job_log_filename = 'metgrid.o' + jobid
+        job_err_filename = 'metgrid.e' + jobid
     time.sleep(long_time)   # give the file system a moment
 
     if scheduler == 'slurm':
@@ -204,14 +212,24 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
             status = True
         else:
             ## May need to add other error keywords to search for...
-            if 'FATAL' in open('metgrid.log.0000').read() or 'Fatal' in open('metgrid.log.0000').read() or 'ERROR' in open('metgrid.log.0000').read():
+            if ('FATAL' in open('metgrid.log.0000').read() or 'Fatal' in open('metgrid.log.0000').read() or
+                    'ERROR' in open('metgrid.log.0000').read()):
                 log.error('ERROR: metgrid.exe failed.')
                 log.error('Consult '+str(run_dir)+'/metgrid.log.0000 for potential error messages.')
                 log.error('Exiting!')
                 sys.exit(1)
-            elif os.path.exists(job_log_filename) and ('BAD TERMINATION' in open(job_log_filename).read() or 'ERROR' in open(job_log_filename).read()):
+            elif (os.path.exists(job_log_filename) and
+                  ('BAD TERMINATION' in open(job_log_filename).read() or 'ERROR' in open(job_log_filename).read() or
+                   ('FATAL' in open(job_log_filename).read()) or ('fatal' in open(job_log_filename).read()) )):
                 log.error('ERROR: metgrid.exe failed.')
                 log.error('Consult '+str(run_dir)+'/' + job_log_filename + ' for potential error messages.')
+                log.error('Exiting!')
+                sys.exit(1)
+            elif (os.path.exists(job_err_filename) and
+                  ('BAD TERMINATION' in open(job_err_filename).read() or 'ERROR' in open(job_err_filename).read() or
+                   ('FATAL' in open(job_err_filename).read()) or ('fatal' in open(job_err_filename).read()) )):
+                log.error('ERROR: metgrid.exe failed.')
+                log.error('Consult '+str(run_dir)+'/' + job_err_filename + ' for potential error messages.')
                 log.error('Exiting!')
                 sys.exit(1)
             time.sleep(long_time)

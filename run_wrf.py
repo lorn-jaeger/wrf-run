@@ -223,37 +223,24 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
         queue = output.split('.')[1]
         log.info('Submitted batch job '+jobid+' to queue '+queue)
 
-    # TODO: Remove after testing run_wrf process monitoring...
-    log.info(f'Sleeping for {long_time} s...')
-
     time.sleep(long_time)   # give the file system a moment
 
-    # TODO: Remove after testing run_wrf process monitoring...
-    log.info(f'Checking job status...')
     if scheduler == 'slurm':
         ret,output = exec_command([f'{curr_dir}/check_job_status.sh',jobid], log)
-        # TODO: Remove after testing run_wrf process monitoring...
-        log.info(f'    Got: {ret}')
     elif scheduler == 'pbs':
         log.info('WARNING: check_job_status.sh needs to be modified to handle PBS calls')
 
     ## Monitor the progress of wrf
     if monitor_wrf:
-        # TODO: Remove after testing run_wrf process monitoring...
-        log.info(f'Monitoring WRF...')
         status = False
         while not status:
             if not pathlib.Path('rsl.out.0000').is_file():
-                # TODO: Remove after testing run_wrf process monitoring...
-                log.info(f'    No "rsl.out.0000 file present. Sleeping for {long_time} s...')
                 time.sleep(long_time)
             else:
                 log.info('wrf is now running on the cluster . . .')
                 status = True
         status = False
         while not status:
-            # TODO: Remove after testing run_wrf process monitoring...
-            log.info(f'    Checking for "SUCCESS COMPLETE WRF" in rsl.out.0000...')
             if 'SUCCESS COMPLETE WRF' in open('rsl.out.0000').read():
                 log.info('SUCCESS! wrf completed successfully.')
                 time.sleep(short_time)  # brief pause to let the file system gather itself
@@ -261,33 +248,27 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
             else:
                 ## The rsl.error files might be empty for a time, which may cause an error if attempting to read it
                 if os.stat('rsl.error.0000') == 0:
-                    # TODO: Remove after testing run_wrf process monitoring...
-                    log.info(f'    No rsl.out.0000 file is present. Sleeping for {long_time} s...')
                     time.sleep(long_time)
                 else:
-                    # TODO: Remove after testing run_wrf process monitoring...
-                    log.info(f'    Checking rsl.error.**** files...')
-
                     ## Loop through the rsl.error.* files to look for fatal errors
                     rslerr = 'rsl.error.*'
                     for fname in glob.glob(rslerr):
                         ## May need to add other error keywords to search for...
-                        if 'Fatal' in open(fname).read() or 'FATAL' in open(fname).read() or 'ERROR' in open(fname).read():
+                        if ('Fatal' in open(fname).read() or 'FATAL' in open(fname).read() or
+                                'ERROR' in open(fname).read() or 'BAD TERMINATION' in open(fname).read() or
+                                'forrtl: severe' in open(fname).read() ):
                             log.error('ERROR: wrf.exe failed.')
                             log.error('Consult '+str(run_dir)+'/'+str(fname)+' for potential error messages.')
                             log.error('Exiting!')
                             sys.exit(1)
 
-                        # TODO: Remove after testing run_wrf process monitoring...
-                        log.info(f'        File {fname} contains no ERROR logs...')
-                    if os.path.exists('log_wrf.o'+jobid) and ('BAD TERMINATION' in open('log_wrf.o'+jobid).read() or 'ERROR' in open('log_wrf.o'+jobid).read()):
+                    if (os.path.exists('log_wrf.o'+jobid) and
+                            ('BAD TERMINATION' in open('log_wrf.o'+jobid).read() or
+                             'ERROR' in open('log_wrf.o'+jobid).read())):
                         log.error('ERROR: wrf.exe failed.')
                         log.error('Consult '+str(run_dir)+'/log_wrf.o'+jobid+' for potential error messages.')
                         log.error('Exiting!')
                         sys.exit(1)
-
-                    # TODO: Remove after testing run_wrf process monitoring...
-                    log.info(f'    File "log_wrf.o{jobid}" is free of termination logs. Sleeping for {long_time} s...')
 
                     time.sleep(long_time)
     else:
