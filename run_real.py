@@ -228,12 +228,16 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
                 ## Loop through the rsl.error.* files to look for fatal errors
                 for fname in glob.glob('rsl.error.*'):
                     ## May need to add other error keywords to search for...
-                    if 'Fatal' in open(fname).read() or 'FATAL' in open(fname).read() or 'ERROR' in open(fname).read():
+                    if ('Fatal' in open(fname).read() or 'FATAL' in open(fname).read() or
+                            'ERROR' in open(fname).read() or 'BAD TERMINATION' in open(fname).read() or
+                            'forrtl: severe' in open(fname).read() ):
                         log.error('ERROR: real.exe failed.')
                         log.error('Consult '+str(run_dir)+'/'+str(fname)+' for potential error messages.')
                         log.error('Exiting!')
                         sys.exit(1)
-                if os.path.exists('log_metgrid.o'+jobid) and ('BAD TERMINATION' in open('log_real.o'+jobid).read() or 'ERROR' in open('log_real.o'+jobid).read()):
+                if (os.path.exists('log_real.o'+jobid) and
+                        ('BAD TERMINATION' in open('log_real.o'+jobid).read() or
+                         'ERROR' in open('log_real.o'+jobid).read())):
                     log.error('ERROR: real.exe failed.')
                     log.error('Consult '+str(run_dir)+'/log_real.o'+jobid+' for potential error messages.')
                     log.error('Exiting!')

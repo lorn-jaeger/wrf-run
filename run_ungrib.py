@@ -241,13 +241,19 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             ungribbed_file.unlink()
 
         ## Delete old log files
-        ret,output = exec_command(['rm','ungrib.log'], log, False, False)
-        files = glob.glob('log_ungrib.*')
+        ret,output = exec_command(['rm', 'ungrib.log'], log, False, False)
+        files = glob.glob('ungrib.o[0-9]*')
         for file in files:
-            ret,output = exec_command(['rm',file], log, False, False)
-        files = glob.glob('ungrib.o*')
+            ret,output = exec_command(['rm', file], log, False, False)
+        files = glob.glob('ungrib.e[0-9]*')
         for file in files:
-            ret,output = exec_command(['rm',file], log, False, False)
+            ret, output = exec_command(['rm', file], log, False, False)
+        files = glob.glob('log_ungrib.o[0-9]*')
+        for file in files:
+            ret,output = exec_command(['rm', file], log, False, False)
+        files = glob.glob('log_ungrib.e[0-9]*')
+        for file in files:
+            ret, output = exec_command(['rm', file], log, False, False)
 
         ## Submit ungrib and get the job ID as a string in case it's useful
         if scheduler == 'slurm':
@@ -305,16 +311,41 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 status = True
             else:
                 ## May need to add other error keywords to search for...
-                if search_file('ungrib.log','FATAL') or search_file('ungrib.log','Fatal') or search_file('ungrib.log','ERROR'):
+                if (search_file('ungrib.log', 'FATAL') or search_file('ungrib.log', 'Fatal') or
+                        search_file('ungrib.log', 'ERROR') or search_file('ungrib.log', 'BAD TERMINATION')):
                     log.error('ERROR: ungrib.exe failed.')
                     log.error('Consult '+str(ungrib_dir)+'/ungrib.log for potential error messages.')
                     log.error('Exiting!')
                     sys.exit(1)
                 else:
-                    for fname in glob.glob('log_ungrib.o*'):
-                        if search_file(fname,'BAD TERMINATION')  or search_file(fname,'ERROR'):
+                    for fname in glob.glob('ungrib.e[0-9]*'):
+                        if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
+                                search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
+                                search_file(fname, 'ERROR')):
                             log.error('ERROR: ungrib.exe failed.')
-                            log.error('Consult '+str(ungrib_dir)+'/'+str(fname)+' for potential error messages.')
+                            log.error('Consult '+ str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                            log.error('Exiting!')
+                            sys.exit(1)
+                    for fname in glob.glob('ungrib.o[0-9]*'):
+                        if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
+                                search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
+                            log.error('ERROR: ungrib.exe failed.')
+                            log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                            log.error('Exiting!')
+                            sys.exit(1)
+                    for fname in glob.glob('log_ungrib.e[0-9]*'):
+                        if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
+                                search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
+                                search_file(fname, 'ERROR')):
+                            log.error('ERROR: ungrib.exe failed.')
+                            log.error('Consult '+ str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                            log.error('Exiting!')
+                            sys.exit(1)
+                    for fname in glob.glob('log_ungrib.o[0-9]*'):
+                        if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
+                                search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
+                            log.error('ERROR: ungrib.exe failed.')
+                            log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
                             log.error('Exiting!')
                             sys.exit(1)
                 time.sleep(long_time)
@@ -386,12 +417,19 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 ungribbed_file.unlink()
 
             ## Delete old log files
-            files = glob.glob('log_ungrib.*')
+            ret,output = exec_command(['rm', 'ungrib.log'], log, False, False)
+            files = glob.glob('ungrib.o[0-9]*')
             for file in files:
-                ret,output = exec_command(['rm',file], log, False, False)
-            files = glob.glob('ungrib.o*')
+                ret,output = exec_command(['rm', file], log, False, False)
+            files = glob.glob('ungrib.e[0-9]*')
             for file in files:
-                ret,output = exec_command(['rm',file], log, False, False)
+                ret,output = exec_command(['rm', file], log, False, False)
+            files = glob.glob('log_ungrib.o[0-9]*')
+            for file in files:
+                ret, output = exec_command(['rm', file], log, False, False)
+            files = glob.glob('log_ungrib.e[0-9]*')
+            for file in files:
+                ret, output = exec_command(['rm', file], log, False, False)
 
             ## Submit ungrib and get the job ID as a string in case it's useful
             if scheduler == 'slurm':
@@ -446,10 +484,34 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                         log.error('Exiting!')
                         sys.exit(1)
                     else:
-                        for fname in glob.glob('log_ungrib.o*'):
-                            if search_file('log_ungrib.o'+jobid, 'BAD TERMINATION'):
+                        for fname in glob.glob('ungrib.e[0-9]*'):
+                            if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
+                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
+                                    search_file(fname, 'ERROR')):
                                 log.error('ERROR: ungrib.exe failed.')
-                                log.error('Consult '+str(ungrib_dir)+'/log_ungrib.o'+jobid+' for potential error messages.')
+                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                                log.error('Exiting!')
+                                sys.exit(1)
+                        for fname in glob.glob('ungrib.o[0-9]*'):
+                            if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
+                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
+                                log.error('ERROR: ungrib.exe failed.')
+                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                                log.error('Exiting!')
+                                sys.exit(1)
+                        for fname in glob.glob('log_ungrib.e[0-9]*'):
+                            if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
+                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
+                                    search_file(fname, 'ERROR')):
+                                log.error('ERROR: ungrib.exe failed.')
+                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                                log.error('Exiting!')
+                                sys.exit(1)
+                        for fname in glob.glob('log_ungrib.o[0-9]*'):
+                            if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
+                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
+                                log.error('ERROR: ungrib.exe failed.')
+                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
                                 log.error('Exiting!')
                                 sys.exit(1)
                     time.sleep(long_time)
