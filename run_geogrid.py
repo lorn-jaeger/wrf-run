@@ -114,15 +114,16 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 	for file in files:
 		ret, output = exec_command(['rm', file], log, False, False)
 
-	## Submit geogrid and get the job ID as a string
+	# Submit geogrid and get the job ID as a string
+	# Set wait=True to force subprocess.run to wait for stdout echoed from the job scheduler
 	if scheduler == 'slurm':
-		ret,output = exec_command(['sbatch','submit_geogrid.bash'], log, False)
+		ret,output = exec_command(['sbatch','submit_geogrid.bash'], log, False, wait=True)
 		jobid = output.split('job ')[1].split('\\n')[0].strip()
 		log.info('Submitted batch job '+jobid)
 		job_log_filename = 'log_geogrid.o' + jobid
 		job_err_filename = 'log_geogrid.e' + jobid
 	elif scheduler == 'pbs':
-		ret,output = exec_command(['qsub','submit_geogrid.bash'], log, False)
+		ret,output = exec_command(['qsub','submit_geogrid.bash'], log, False, wait=True)
 		jobid = output.split('.')[0]
 		queue = output.split('.')[1]
 		log.info('Submitted batch job '+jobid+' to queue '+queue)

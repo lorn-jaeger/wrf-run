@@ -69,20 +69,20 @@ def parse_args():
     hostname = args.hostname
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
-        print('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
+        log.error('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
         parser.print_help()
         sys.exit(1)
 
     if wps_dir is not None:
         wps_dir = pathlib.Path(wps_dir)
     else:
-        print('ERROR! wps_dir not specified as an argument in call to run_ungrib.py. Exiting!')
+        log.error('ERROR! wps_dir not specified as an argument in call to run_ungrib.py. Exiting!')
         sys.exit(1)
 
     if run_dir is not None:
         run_dir = pathlib.Path(run_dir)
     else:
-        print('ERROR! run_dir not specified as an argument in call to run_ungrib.py. Exiting!')
+        log.error('ERROR! run_dir not specified as an argument in call to run_ungrib.py. Exiting!')
         sys.exit(1)
 
     if out_dir is not None:
@@ -94,13 +94,13 @@ def parse_args():
     if grib_dir is not None:
         grib_dir = pathlib.Path(grib_dir)
     else:
-        print('ERROR! grib_dir not specified as an argument in call to run_ungrib.py. Exiting!')
+        log.error('ERROR! grib_dir not specified as an argument in call to run_ungrib.py. Exiting!')
         sys.exit(1)
 
     if temp_dir is not None:
         temp_dir = pathlib.Path(temp_dir)
     else:
-        print('ERROR! temp_dir is not specified as an argument in call to run_ungrib.py. Exiting!')
+        log.error('ERROR! temp_dir is not specified as an argument in call to run_ungrib.py. Exiting!')
         sys.exit(1)
 
     return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname
@@ -255,13 +255,14 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         for file in files:
             ret, output = exec_command(['rm', file], log, False, False)
 
-        ## Submit ungrib and get the job ID as a string in case it's useful
+        # Submit ungrib and get the job ID as a string in case it's useful
+        # Set wait=True to force subprocess.run to wait for stdout echoed from the job scheduler
         if scheduler == 'slurm':
-            ret,output = exec_command(['sbatch','submit_ungrib.bash'], log)
+            ret,output = exec_command(['sbatch','submit_ungrib.bash'], log, wait=True)
             jobid = output.split('job ')[1].split('\\n')[0]
             log.info('Submitted batch job '+jobid)
         elif scheduler == 'pbs':
-            ret,output = exec_command(['qsub','submit_ungrib.bash'], log)
+            ret,output = exec_command(['qsub', 'submit_ungrib.bash'], log, wait=True)
             jobid = output.split('.')[0]
             queue = output.split('.')[1]
             log.info('Submitted batch job '+jobid+' to queue '+queue)
@@ -431,13 +432,14 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             for file in files:
                 ret, output = exec_command(['rm', file], log, False, False)
 
-            ## Submit ungrib and get the job ID as a string in case it's useful
+            # Submit ungrib and get the job ID as a string in case it's useful
+            # Set wait=True to force subprocess.run to wait for stdout echoed from the job scheduler
             if scheduler == 'slurm':
-                ret,output = exec_command(['sbatch','submit_ungrib.bash'], log)
+                ret,output = exec_command(['sbatch', 'submit_ungrib.bash'], log, wait=True)
                 jobid = output.split('job ')[1].split('\\n')[0].strip()
                 log.info('Submitted batch job '+jobid)
             elif scheduler == 'pbs':
-                ret,output = exec_command(['qsub','submit_ungrib.bash'], log)
+                ret,output = exec_command(['qsub', 'submit_ungrib.bash'], log, wait=True)
                 jobid = output.split('.')[0]
                 queue = output.split('.')[1]
                 log.info('Submitted batch job '+jobid+' to queue '+queue)

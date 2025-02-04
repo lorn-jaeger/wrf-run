@@ -60,26 +60,26 @@ def parse_args():
     hostname = args.hostname
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
-        print('ERROR! Incorrect format for argument cycle_dt_beg in call to run_real.py. Exiting!')
+        log.error('ERROR! Incorrect format for argument cycle_dt_beg in call to run_real.py. Exiting!')
         parser.print_help()
         sys.exit(1)
 
     if wrf_dir is not None:
         wrf_dir = pathlib.Path(wrf_dir)
     else:
-        print('ERROR! wrf_dir not specified as an argument in call to run_real.py. Exiting!')
+        log.error('ERROR! wrf_dir not specified as an argument in call to run_real.py. Exiting!')
         sys.exit(1)
 
     if run_dir is not None:
         run_dir = pathlib.Path(run_dir)
     else:
-        print('ERROR! run_dir not specified as an argument in call to run_real.py. Exiting!')
+        log.error('ERROR! run_dir not specified as an argument in call to run_real.py. Exiting!')
         sys.exit(1)
 
     if tmp_dir is not None:
         tmp_dir = pathlib.Path(tmp_dir)
     else:
-        print('ERROR! tmp_dir is not specified as an argument in call to run_real.py. Exiting!')
+        log.error('ERROR! tmp_dir is not specified as an argument in call to run_real.py. Exiting!')
         sys.exit(1)
 
     if nml_tmp is None:
@@ -208,17 +208,18 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
     for file in files:
         ret,output = exec_command(['rm',file], log, False, False)
 
-    ## Submit wrf and get the job ID as a string
+    # Submit wrf and get the job ID as a string
+    # Set wait=True to force subprocess.run to wait for stdout echoed from the job scheduler
     if exp_name is None:
         jobname = 'wrf_' + str(beg_dy) + '_' + str(beg_hr)
     else:
         jobname = 'wrf_M' + exp_name[-1] + '_' + str(beg_dy) + '_' + str(beg_hr)
     if scheduler == 'slurm':
-        ret,output = exec_command(['sbatch','-J',jobname,'submit_wrf.bash'], log)
+        ret,output = exec_command(['sbatch','-J',jobname,'submit_wrf.bash'], log, wait=True)
         jobid = output.split('job ')[1].split('\\n')[0].strip()
         log.info('Submitted batch job '+jobid)
     elif scheduler == 'pbs':
-        ret,output = exec_command(['qsub','-N',jobname,'submit_wrf.bash'], log)
+        ret,output = exec_command(['qsub','-N',jobname,'submit_wrf.bash'], log, wait=True)
         jobid = output.split('.')[0]
         queue = output.split('.')[1]
         log.info('Submitted batch job '+jobid+' to queue '+queue)

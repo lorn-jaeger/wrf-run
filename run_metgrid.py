@@ -61,20 +61,20 @@ def parse_args():
     hostname = args.hostname
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
-        print('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
+        log.error('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
         parser.print_help()
         sys.exit(1)
 
     if wps_dir is not None:
         wps_dir = pathlib.Path(wps_dir)
     else:
-        print('ERROR! wps_dir not specified as an argument in call to run_metgrid.py. Exiting!')
+        log.error('ERROR! wps_dir not specified as an argument in call to run_metgrid.py. Exiting!')
         sys.exit(1)
 
     if run_dir is not None:
         run_dir = pathlib.Path(run_dir)
     else:
-        print('ERROR! run_dir not specified as an argument in call to run_metgrid.py. Exiting!')
+        log.error('ERROR! run_dir not specified as an argument in call to run_metgrid.py. Exiting!')
         sys.exit(1)
 
     if out_dir is not None:
@@ -92,7 +92,7 @@ def parse_args():
     if tmp_dir is not None:
         tmp_dir = pathlib.Path(tmp_dir)
     else:
-        print('ERROR! tmp_dir is not specified as an argument in call to run_metgrid.py. Exiting!')
+        log.error('ERROR! tmp_dir is not specified as an argument in call to run_metgrid.py. Exiting!')
         sys.exit(1)
 
     if nml_tmp is None:
@@ -175,15 +175,16 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
     for file in files:
         ret, output = exec_command(['rm', file], log, False, False)
 
-    ## Submit metgrid and get the job ID as a string
+    # Submit metgrid and get the job ID as a string
+    # Set wait=True to force subprocess.run to wait for stdout echoed from the job scheduler
     if scheduler == 'slurm':
-        ret,output = exec_command(['sbatch','submit_metgrid.bash'], log, False)
+        ret,output = exec_command(['sbatch','submit_metgrid.bash'], log, False, wait=True)
         jobid = output.split('job ')[1].split('\\n')[0].strip()
         log.info('Submitted batch job '+jobid)
         job_log_filename = 'log_metgrid.o' + jobid
         job_err_filename = 'log_metgrid.e' + jobid
     elif scheduler == 'pbs':
-        ret,output = exec_command(['qsub','submit_metgrid.bash'], log, False)
+        ret,output = exec_command(['qsub','submit_metgrid.bash'], log, False, wait=True)
         jobid = output.split('.')[0]
         queue = output.split('.')[1]
         log.info('Submitted batch job '+jobid+' to queue '+queue)
