@@ -115,6 +115,11 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     fmt_wrf_dt = '%Y-%m-%d_%H:%M:%S'
     fmt_wrf_date_hh = '%Y-%m-%d_%H'
 
+    variants_glade = ['GLADE', 'glade']
+    variants_gfs = ['GFS', 'gfs']
+    variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
+    variants_gefs = ['GEFS', 'gfs']
+
     cycle_dt = pd.to_datetime(cycle_dt_str, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
     end_dt = beg_dt + dt.timedelta(hours=sim_hrs)
@@ -131,22 +136,17 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
     ## Create the ungrib output directory if it doesn't already exist
     out_dir.mkdir(parents=True, exist_ok=True)
-    if icbc_model == 'GEFS':
+    if icbc_model in variants_gefs:
         out_dir.joinpath('gefs_a').mkdir(parents=True, exist_ok=True)
         out_dir.joinpath('gefs_b').mkdir(parents=True, exist_ok=True)
 
-    ## Create the ungrib output directory(ies) if they don't already exist (and if they do, delete them first)
-    if icbc_model == 'GEFS':
-        if out_dir.joinpath('gefs_a').is_dir():
-            shutil.rmtree(out_dir.joinpath('gefs_a'))
-            out_dir.joinpath('gefs_a').mkdir(parents=True, exist_ok=True)
-        if out_dir.joinpath('gefs_b').is_dir():
-            shutil.rmtree(out_dir.joinpath('gefs_b'))
-            out_dir.joinpath('gefs_b').mkdir(parents=True, exist_ok=True)
-    else:
-        if out_dir.is_dir():
-            shutil.rmtree(out_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
+    # Create the ungrib output directory if it doesn't already exist (and if it does, delete it first)
+    if out_dir.is_dir():
+        shutil.rmtree(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create empty jobid list to be filled in later to allow tracking of each ungrib job
+    jobid_list = [''] * n_times
 
     ## Loop over times
     for tt in range(n_times):
@@ -166,7 +166,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         ## GEFS requires ungribbing two sets of files (a and b), so requires two directories
         ## HRRR would also require ungribbing two sets of files if native sigma level input is desired above-surface
         ## GFS only requires ungribbing one set of files
-        if icbc_model == 'GEFS' or icbc_model == 'gefs':
+        if icbc_model in variants_gefs:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_b')
         else:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh)
@@ -196,21 +196,39 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             pathlib.Path('Vtable').unlink()
         if pathlib.Path('namelist.wps').is_file():
             pathlib.Path('namelist.wps').unlink()
-        if icbc_model == 'GFS' or icbc_model == 'gfs':
+        if icbc_model in variants_gfs:
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFS'))
             if icbc_source == 'GLADE' or icbc_source == 'glade':
                 file_pattern = str(grib_dir) + '/gfs.0p25.' + icbc_cycle_datehh + '.f*'
             elif icbc_source == 'AWS' or icbc_source == 'aws':
                 file_pattern = str(grib_dir) + '/*t' + icbc_cycle_hr + 'z.pgrb2.0p25.f*'
             else:
-                log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS in run_ungrib.py. Exiting!')
+                log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS in run_ungrib.py.')
+                log.error('Exiting!')
                 sys.exit(1)
-            ret,output = exec_command(['./link_grib.csh', file_pattern],log)
+            # ret,output = exec_command(['./link_grib.csh', file_pattern],log)
             shutil.copy(temp_dir.joinpath('namelist.wps.gfs'), 'namelist.wps.template')
-        elif icbc_model == 'GEFS' or icbc_model == 'gefs':
+        elif icbc_model in variants_gfs_fnl:
+            pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.GFS'))
+            if icbc_source in variants_glade:
+                file_pattern = str(grib_dir) + '/gdas1.fnl0p25.*.grib2'
+            else:
+                log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS_FNL in run_ungrib.py.')
+                log.error('Exiting!')
+                sys.exit(1)
+            shutil.copy(temp_dir.joinpath('namelist.wps.gfs_fnl'), 'namelist.wps.template')
+        elif icbc_model in variants_gefs:
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFSENS'))
-            ret,output = exec_command(['./link_grib.csh',str(grib_dir)+'/pgrb2bp5/gep'+mem_id+'.t'+icbc_cycle_hr+'z.pgrb2b.0p50.f'+lead_h_str],log)
+            file_pattern = str(grib_dir) + '/pgrb2bp5/gep' + mem_id + '.t' + icbc_cycle_hr + 'z.pgrb2b.0p50.f' + lead_h_str
+            # ret,output = exec_command(['./link_grib.csh',str(grib_dir)+'/pgrb2bp5/gep'+mem_id+'.t'+icbc_cycle_hr+'z.pgrb2b.0p50.f'+lead_h_str],log)
             shutil.copy(temp_dir.joinpath('namelist.wps.gefs_b'), 'namelist.wps.template')
+        else:
+            log.error('ERROR: Unrecognized icbc_model in run_ungrib.py.')
+            log.error('Exiting!')
+            sys.exit(1)
+
+        # Run link_grib
+        ret,output = exec_command(['./link_grib.csh', file_pattern], log)
 
         ## Modify the namelist for this date, running ungrib separately on each grib file
         with open('namelist.wps.template', 'r') as in_file, open('namelist.wps', 'w') as out_file:
@@ -220,40 +238,47 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 elif line.strip()[0:8] == 'end_date':
                     out_file.write(" end_date   = '"+this_dt_wrf_str+"',\n")
                 elif line.strip()[0:6] == 'prefix':
-                    if icbc_model == 'GFS' or icbc_model == 'gfs':
-                        out_file.write(" prefix = '"+str(out_dir)+"/GFS',\n")
-                    elif icbc_model == 'GEFS' or icbc_model == 'gefs':
-                        out_file.write(" prefix = '"+str(out_dir)+"/gefs_b/GEFS_B',\n")
+                    # To run ungrib separately for each time and avoid having ungrib's clean-up deletion of all PFILE
+                    # files in the folder where prefix points (which can cause other still-running instances of ungrib
+                    # to crash with file not found errors), set prefix to use ungrib_dir rather than out_dir.
+                    if icbc_model in variants_gfs:
+                        out_file.write(" prefix = '"+str(ungrib_dir)+"/GFS',\n")
+                    elif icbc_model in variants_gfs_fnl:
+                        out_file.write(" prefix = '" + str(ungrib_dir) + "/GFS_FNL',\n")
+                    elif icbc_model in variants_gefs:
+                        out_file.write(" prefix = '"+str(ungrib_dir)+"/GEFS_B',\n")
                     else:
-                        out_file.write(" prefix = '"+str(out_dir)+"/FILE',\n")
+                        out_file.write(" prefix = '"+str(ungrib_dir)+"/FILE',\n")
                 else:
                     out_file.write(line)
 
-        ## If the expected output file exists, delete it first
+        ## If the expected output file exists in its temporary location (ungrib_dir), delete it first
         ## This enables checking for its existence later as proof of successful completion
-        if icbc_model == 'GFS' or icbc_model == 'gfs':
-            ungribbed_file = out_dir.joinpath('GFS:'+this_dt_wrf_date_hh)
-        elif icbc_model == 'GEFS' or icbc_model == 'gefs':
-            ungribbed_file = out_dir.joinpath('gefs_b','GEFS_B:'+this_dt_wrf_date_hh)
+        if icbc_model in variants_gfs:
+            ungribbed_file = ungrib_dir.joinpath('GFS:' + this_dt_wrf_date_hh)
+        elif icbc_model in variants_gfs_fnl:
+            ungribbed_file = ungrib_dir.joinpath('GFS_FNL:' + this_dt_wrf_date_hh)
+        elif icbc_model in variants_gefs:
+            ungribbed_file = ungrib_dir.joinpath('GEFS_B:' + this_dt_wrf_date_hh)
         else:
-            ungribbed_file = out_dir.joinpath('FILE:'+this_dt_wrf_date_hh)
+            ungribbed_file = ungrib_dir.joinpath('FILE:' + this_dt_wrf_date_hh)
         if ungribbed_file.is_file():
             ungribbed_file.unlink()
 
         ## Delete old log files
-        ret,output = exec_command(['rm', 'ungrib.log'], log, False, False)
+        ret,output = exec_command(['rm', 'ungrib.log'], log, exit_on_fail=False, verbose=False)
         files = glob.glob('ungrib.o[0-9]*')
         for file in files:
-            ret,output = exec_command(['rm', file], log, False, False)
+            ret,output = exec_command(['rm', file], log, exit_on_fail=False, verbose=False)
         files = glob.glob('ungrib.e[0-9]*')
         for file in files:
-            ret, output = exec_command(['rm', file], log, False, False)
+            ret, output = exec_command(['rm', file], log, exit_on_fail=False, verbose=False)
         files = glob.glob('log_ungrib.o[0-9]*')
         for file in files:
-            ret,output = exec_command(['rm', file], log, False, False)
+            ret,output = exec_command(['rm', file], log, exit_on_fail=False, verbose=False)
         files = glob.glob('log_ungrib.e[0-9]*')
         for file in files:
-            ret, output = exec_command(['rm', file], log, False, False)
+            ret, output = exec_command(['rm', file], log, exit_on_fail=False, verbose=False)
 
         # Submit ungrib and get the job ID as a string in case it's useful
         # Set wait=True to force subprocess.run to wait for stdout echoed from the job scheduler
@@ -261,31 +286,22 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             ret,output = exec_command(['sbatch','submit_ungrib.bash'], log, wait=True)
             jobid = output.split('job ')[1].split('\\n')[0]
             log.info('Submitted batch job '+jobid)
+            jobid_list[tt] = jobid
         elif scheduler == 'pbs':
             ret,output = exec_command(['qsub', 'submit_ungrib.bash'], log, wait=True)
             jobid = output.split('.')[0]
             queue = output.split('.')[1]
             log.info('Submitted batch job '+jobid+' to queue '+queue)
+            jobid_list[tt] = jobid
         time.sleep(short_time)
 
-    '''
-    ## Has the last ungrib job finished?
-    if icbc_model == 'GFS' or icbc_model == 'gfs':
-        last_file = out_dir.joinpath('GFS:'+this_dt_wrf_date_hh)
-    elif icbc_model == 'GEFS' or icbc_model == 'gefs':
-        last_file = out_dir.joinpath('gefs_b','GEFS_B:'+this_dt_wrf_date_hh)
-    else:
-        last_file = out_dir.joinpath('FILE:'+this_dt_wrf_date_hh)
-
-    while not last_file.is_file():
-        time.sleep(long_time)
-    '''
     ## Loop back through the run directories, verifying that each ungrib job finished successfully
     for tt in range(n_times):
         this_dt = all_dt[tt]
         this_dt_yyyymmdd_hh = this_dt.strftime(fmt_yyyymmdd_hh)
+        this_dt_wrf_date_hh = this_dt.strftime(fmt_wrf_date_hh)
 
-        if icbc_model == 'GEFS' or icbc_model == 'gefs':
+        if icbc_model in variants_gefs:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_b')
         else:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh)
@@ -294,7 +310,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         time.sleep(short_time)
 
         if scheduler == 'slurm':
-            ret,output = exec_command([f'{curr_dir}/check_job_status.sh',jobid], log)
+            ret,output = exec_command([f'{curr_dir}/check_job_status.sh', jobid_list[tt]], log)
         elif scheduler == 'pbs':
             log.info('WARNING: check_job_status.sh needs to be modified to handle PBS calls')
 
@@ -311,52 +327,40 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             if search_file('ungrib.log', 'Successful completion of program ungrib.exe'):
                 status = True
             else:
-                ## May need to add other error keywords to search for...
-                if (search_file('ungrib.log', 'FATAL') or search_file('ungrib.log', 'Fatal') or
-                        search_file('ungrib.log', 'ERROR') or search_file('ungrib.log', 'BAD TERMINATION')):
-                    log.error('ERROR: ungrib.exe failed.')
-                    log.error('Consult '+str(ungrib_dir)+'/ungrib.log for potential error messages.')
-                    log.error('Exiting!')
-                    sys.exit(1)
-                else:
-                    for fname in glob.glob('ungrib.e[0-9]*'):
-                        if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
-                                search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
-                                search_file(fname, 'ERROR')):
-                            log.error('ERROR: ungrib.exe failed.')
-                            log.error('Consult '+ str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                            log.error('Exiting!')
-                            sys.exit(1)
-                    for fname in glob.glob('ungrib.o[0-9]*'):
-                        if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
-                                search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
-                            log.error('ERROR: ungrib.exe failed.')
-                            log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                            log.error('Exiting!')
-                            sys.exit(1)
-                    for fname in glob.glob('log_ungrib.e[0-9]*'):
-                        if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
-                                search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
-                                search_file(fname, 'ERROR')):
-                            log.error('ERROR: ungrib.exe failed.')
-                            log.error('Consult '+ str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                            log.error('Exiting!')
-                            sys.exit(1)
-                    for fname in glob.glob('log_ungrib.o[0-9]*'):
-                        if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
-                                search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
-                            log.error('ERROR: ungrib.exe failed.')
-                            log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                            log.error('Exiting!')
-                            sys.exit(1)
+                # May need to add more error message patterns to search for
+                fnames = ['ungrib.log', 'ungrib.e' + jobid_list[tt], 'ungrib.o' + jobid_list[tt],
+                          'log_ungrib.e' + jobid_list[tt], 'log_ungrib.o' + jobid_list[tt]]
+                patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+                for fname in fnames:
+                    if ungrib_dir.joinpath(fname).is_file():
+                        for pattern in patterns:
+                            if search_file(str(ungrib_dir) + '/' + fname, pattern):
+                                log.error('ERROR: ungrib.exe failed.')
+                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                                log.error('Exiting!')
+                                sys.exit(1)
+
                 time.sleep(long_time)
+
+        # Now move each ungribbed file to the main ungrib directory, where metgrid will expect to find them all
+        if icbc_model in variants_gfs:
+            ret,output = exec_command(['mv', 'GFS:' + this_dt_wrf_date_hh, str(out_dir)], log)
+        elif icbc_model in variants_gfs_fnl:
+            ret,output = exec_command(['mv', 'GFS_FNL:' + this_dt_wrf_date_hh, str(out_dir)], log)
+        elif icbc_model in variants_gefs:
+            ret,output = exec_command(['mv', 'GEFS_B:' + this_dt_wrf_date_hh, str(out_dir)], log)
+        else:
+            ret,output = exec_command(['mv', 'FILE:' + this_dt_wrf_date_hh, str(out_dir)], log)
 
     ## If GEFS, run ungrib for the a files, too
     ## Could potentially merge this back in with loop above to get through all ungrib processes a bit faster,
     ## but keeping them as two separate code blocks is a little bit cleaner/easier to read. Maybe could do
     ## the same thing by making much of this code into a function.
-    if icbc_model == 'GEFS' or icbc_model == 'gefs':
-        
+    if icbc_model in variants_gefs:
+
+        # Re-initialize empty jobid list to be filled in later to allow tracking of each ungrib job
+        jobid_list = [''] * n_times
+
         ## Loop over times
         for tt in range(n_times):
             this_dt = all_dt[tt]
@@ -408,12 +412,12 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                     elif line.strip()[0:8] == 'end_date':
                         out_file.write(" end_date   = '"+this_dt_wrf_str+"',\n")
                     elif line.strip()[0:6] == 'prefix':
-                        out_file.write(" prefix = '"+str(out_dir)+"/gefs_a/GEFS_A',\n")
+                        out_file.write(" prefix = '"+str(ungrib_dir)+"/GEFS_A',\n")
                     else:
                         out_file.write(line)
 
             ## If the expected output file already exists, delete it first
-            ungribbed_file = out_dir.joinpath('gefs_a','GEFS_A:'+this_dt_wrf_date_hh)
+            ungribbed_file = ungrib_dir.joinpath('GEFS_A:'+this_dt_wrf_date_hh)
             if ungribbed_file.is_file():
                 ungribbed_file.unlink()
 
@@ -438,23 +442,20 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 ret,output = exec_command(['sbatch', 'submit_ungrib.bash'], log, wait=True)
                 jobid = output.split('job ')[1].split('\\n')[0].strip()
                 log.info('Submitted batch job '+jobid)
+                jobid_list[tt] = jobid
             elif scheduler == 'pbs':
                 ret,output = exec_command(['qsub', 'submit_ungrib.bash'], log, wait=True)
                 jobid = output.split('.')[0]
                 queue = output.split('.')[1]
                 log.info('Submitted batch job '+jobid+' to queue '+queue)
+                jobid_list[tt] = jobid
             time.sleep(short_time)
 
-        '''
-        ## Hold until the last ungrib job is finished
-        last_file = out_dir.joinpath('gefs_a','GEFS_A:'+this_dt_wrf_date_hh)
-        while not last_file.is_file():
-            time.sleep(long_time)
-        '''
         ## Loop back through the run directories, verifying that each ungrib job finished successfully
         for tt in range(n_times):
             this_dt = all_dt[tt]
             this_dt_yyyymmdd_hh = this_dt.strftime(fmt_yyyymmdd_hh)
+            this_dt_wrf_date_hh = this_dt.strftime(fmt_wrf_date_hh)
          
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_a')
             os.chdir(ungrib_dir)
@@ -479,62 +480,23 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 if search_file('ungrib.log', '*** Successful completion of program ungrib.exe ***'):
                     status = True
                 else:
-                    ## May need to add other error keywords to search for...
-                    if search_file('ungrib.log', 'FATAL') or search_file('ungrib.log', 'Fatal'):
-                        log.error('ERROR: ungrib.exe failed.')
-                        log.error('Consult '+str(ungrib_dir)+'/ungrib.log for potential error messages.')
-                        log.error('Exiting!')
-                        sys.exit(1)
-                    else:
-                        for fname in glob.glob('ungrib.e[0-9]*'):
-                            if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
-                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
-                                    search_file(fname, 'ERROR')):
-                                log.error('ERROR: ungrib.exe failed.')
-                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                                log.error('Exiting!')
-                                sys.exit(1)
-                        for fname in glob.glob('ungrib.o[0-9]*'):
-                            if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
-                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
-                                log.error('ERROR: ungrib.exe failed.')
-                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                                log.error('Exiting!')
-                                sys.exit(1)
-                        for fname in glob.glob('log_ungrib.e[0-9]*'):
-                            if (search_file(fname, 'forrtl: severe') or search_file(fname, 'BAD TERMINATION') or
-                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal') or
-                                    search_file(fname, 'ERROR')):
-                                log.error('ERROR: ungrib.exe failed.')
-                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                                log.error('Exiting!')
-                                sys.exit(1)
-                        for fname in glob.glob('log_ungrib.o[0-9]*'):
-                            if (search_file(fname, 'BAD TERMINATION') or search_file(fname, 'ERROR') or
-                                    search_file(fname, 'FATAL') or search_file(fname, 'fatal')):
-                                log.error('ERROR: ungrib.exe failed.')
-                                log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
-                                log.error('Exiting!')
-                                sys.exit(1)
+                    # Add other error message patterns to search for if needed
+                    fnames = ['ungrib.log', 'ungrib.e' + jobid_list[tt], 'ungrib.o' + jobid_list[tt],
+                              'log_ungrib.e' + jobid_list[tt], 'log_ungrib.o' + jobid_list[tt]]
+                    patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+                    for fname in fnames:
+                        if ungrib_dir.joinpath(fname).is_file():
+                            for pattern in patterns:
+                                if search_file(str(ungrib_dir) + '/' + fname, pattern):
+                                    log.error('ERROR: ungrib.exe failed.')
+                                    log.error('Consult ' + str(ungrib_dir) + '/' + fname + ' for potential error messages.')
+                                    log.error('Exiting!')
+                                    sys.exit(1)
+
                     time.sleep(long_time)
 
-        ## Go to the main output directory, and link all the GEFS_A and GEFS_B files there for simplicity downstream
-        ## First wait a bit to give straggler processes a chance to finish
-        time.sleep(long_long_time)
-        os.chdir(out_dir)
-        files = glob.glob('GEFS_A*')
-        for file in files:
-            ret,output = exec_command(['rm',file], log, False, False)
-        files = glob.glob('GEFS_B*')
-        for file in files:
-            ret,output = exec_command(['rm',file], log, False, False)
-
-        files = glob.glob('gefs_a/GEFS_A*')
-        for file in files:
-            ret,output = exec_command(['ln','-sf',file,'.'], log)
-        files = glob.glob('gefs_b/GEFS_B*')
-        for file in files:
-            ret,output = exec_command(['ln','-sf',file,'.'], log)
+            # Now move each ungribbed file to the main ungrib directory, where metgrid will expect to find them all
+            ret, output = exec_command(['mv', 'GEFS_A:' + this_dt_wrf_date_hh, str(out_dir)], log)
 
     log.info('SUCCESS! All ungrib jobs completed successfully.')
 

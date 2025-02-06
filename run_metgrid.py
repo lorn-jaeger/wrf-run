@@ -21,6 +21,7 @@ import pandas as pd
 import logging
 
 from proc_util import exec_command
+from wps_wrf_util import search_file
 
 this_file = os.path.basename(__file__)
 logging.basicConfig(format=f'{this_file}: %(asctime)s - %(message)s',
@@ -110,6 +111,10 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
     fmt_wrf_dt = '%Y-%m-%d_%H:%M:%S'
     fmt_wrf_date_hh = '%Y-%m-%d_%H'
 
+    variants_gfs = ['GFS', 'gfs']
+    variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
+    variants_gefs = ['GEFS', 'gefs']
+
     cycle_dt = pd.to_datetime(cycle_dt_beg, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
     end_dt = beg_dt + dt.timedelta(hours=sim_hrs)
@@ -149,10 +154,14 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
             elif line.strip()[0:8] == 'end_date':
                 out_file.write(" end_date   = '"+end_dt_wrf+"', '"+beg_dt_wrf+"', '"+beg_dt_wrf+"',\n")
             elif line.strip()[0:7] == 'fg_name':
-                if icbc_model == 'GFS' or icbc_model == 'gfs':
+                if icbc_model in variants_gfs:
                     out_file.write(" fg_name = '"+str(ungrib_dir)+"/GFS',\n")
-                elif icbc_model == 'GEFS' or icbc_model == 'gefs':
+                elif icbc_model in variants_gfs_fnl:
+                    out_file.write(" fg_name = '" + str(ungrib_dir) + "/GFS_FNL',\n")
+                elif icbc_model in variants_gefs:
                     out_file.write(" fg_name = '"+str(ungrib_dir)+"/GEFS_B','"+str(ungrib_dir)+"/GEFS_A',\n")
+                else:
+                    out_file.write(" fg_name = '" + str(ungrib_dir) + "/FILE',\n")
             elif line.strip()[0:28] == 'opt_output_from_metgrid_path':
                 out_file.write(" opt_output_from_metgrid_path = '"+str(out_dir)+"',\n")
             else:
@@ -190,6 +199,9 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
         log.info('Submitted batch job '+jobid+' to queue '+queue)
         job_log_filename = 'metgrid.o' + jobid
         job_err_filename = 'metgrid.e' + jobid
+    else:
+        log.error('ERROR: Unknown job scheduler. Exiting!')
+        sys.exit(1)
     time.sleep(long_time)   # give the file system a moment
 
     if scheduler == 'slurm':
@@ -207,32 +219,23 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
             status = True
     status = False
     while not status:
-        if '*** Successful completion of program metgrid.exe ***' in open('metgrid.log.0000').read():
+        if search_file(str(run_dir) + '/metgrid.log.0000', '*** Successful completion of program metgrid.exe ***'):
             log.info('SUCCESS! metgrid completed successfully.')
             time.sleep(short_time)  # brief pause to let the file system gather itself
             status = True
         else:
-            ## May need to add other error keywords to search for...
-            if ('FATAL' in open('metgrid.log.0000').read() or 'Fatal' in open('metgrid.log.0000').read() or
-                    'ERROR' in open('metgrid.log.0000').read()):
-                log.error('ERROR: metgrid.exe failed.')
-                log.error('Consult '+str(run_dir)+'/metgrid.log.0000 for potential error messages.')
-                log.error('Exiting!')
-                sys.exit(1)
-            elif (os.path.exists(job_log_filename) and
-                  ('BAD TERMINATION' in open(job_log_filename).read() or 'ERROR' in open(job_log_filename).read() or
-                   ('FATAL' in open(job_log_filename).read()) or ('fatal' in open(job_log_filename).read()) )):
-                log.error('ERROR: metgrid.exe failed.')
-                log.error('Consult '+str(run_dir)+'/' + job_log_filename + ' for potential error messages.')
-                log.error('Exiting!')
-                sys.exit(1)
-            elif (os.path.exists(job_err_filename) and
-                  ('BAD TERMINATION' in open(job_err_filename).read() or 'ERROR' in open(job_err_filename).read() or
-                   ('FATAL' in open(job_err_filename).read()) or ('fatal' in open(job_err_filename).read()) )):
-                log.error('ERROR: metgrid.exe failed.')
-                log.error('Consult '+str(run_dir)+'/' + job_err_filename + ' for potential error messages.')
-                log.error('Exiting!')
-                sys.exit(1)
+            # May need to add more error message patterns to search for
+            fnames = ['metgrid.log.0000', job_log_filename, job_err_filename]
+            patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+            for fname in fnames:
+                if run_dir.joinpath(fname).is_file():
+                    for pattern in patterns:
+                        if search_file(str(run_dir) + '/' + fname, pattern):
+                            log.error('ERROR: metgrid.exe failed.')
+                            log.error('Consult ' + str(run_dir) + '/' + fname + ' for potential error messages.')
+                            log.error('Exiting!')
+                            sys.exit(1)
+
             time.sleep(long_time)
 
 
