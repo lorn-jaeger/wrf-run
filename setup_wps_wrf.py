@@ -66,7 +66,7 @@ def parse_args():
     ## Parse the command-line arguments
     parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
     parser.add_argument('-b', '--cycle_dt_beg', required=True, help='beginning date/time of first WRF simulation [YYYYMMDD_HH] (default: 20220801_00)')
-    parser.add_argument('-e', '--cycle_dt_end', required=False, default=None, help='beginning date/time of last WRF simulation [YYYYMMDD_HH]')
+    parser.add_argument('-e', '--cycle_dt_end', required=False, default=None, help='beginning date/time of last WRF simulation [YYYYMMDD_HH], if wanting to run a series of WRF simulations (default: None)')
     parser.add_argument('-c', '--config', required=True, help=f"yaml configuration file\n{yaml.dump(yaml_config_help, default_flow_style=False)}")
     
     args = parser.parse_args()
@@ -74,13 +74,13 @@ def parse_args():
     cycle_dt_end = args.cycle_dt_end
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
-        print('ERROR! Incorrect format for argument cycle_dt_beg. Exiting!')
+        log.error('ERROR! Incorrect format for argument cycle_dt_beg. Exiting!')
         parser.print_help()
         sys.exit(1)
 
     if cycle_dt_end != None:
         if len(cycle_dt_end) != 11 or cycle_dt_end[8] != '_':
-            print('ERROR! Incorrect length for argument cycle_dt_end. Exiting!')
+            log.error('ERROR! Incorrect length for argument cycle_dt_end. Exiting!')
             parser.print_help()
             sys.exit(1)
     else:
@@ -175,6 +175,12 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
     fmt_yyyymmdd_hh    = '%Y%m%d_%H'
     fmt_yyyymmdd_hhmm  = '%Y%m%d_%H%M'
 
+    variants_aws = ['AWS', 'aws']
+    variants_glade = ['GLADE', 'glade']
+    variants_gfs = ['GFS', 'gfs']
+    variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
+    variants_gefs = ['GEFS', 'gefs']
+
     ## Date/time manipulation
     cycle_dt_beg = pd.to_datetime(cycle_dt_str_beg, format=fmt_yyyymmdd_hh)
     cycle_dt_end = pd.to_datetime(cycle_dt_str_end, format=fmt_yyyymmdd_hh)
@@ -244,23 +250,31 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
         ## Local directory where ICs/LBC grib2 files should be downloaded
         # Model directory structure & naming conventions to mimic AWS, rather than GLADE or GoogleCloud
-        if icbc_model == 'GEFS':
+        if icbc_model in variants_gefs:
             # Full-domain grib directory
 #            grib_dir_full = grib_dir_parent.joinpath('gefs',icbc_cycle_yyyymmdd_hh,exp_name)
             grib_dir_full = grib_dir_parent.joinpath(f'gefs.{icbc_cycle_yyyymmdd}',icbc_cycle_hr,'atmos')
 
             # Use subset GEFS
             grib_dir_subset = grib_dir_parent.joinpath(f'gefs.{icbc_cycle_yyyymmdd}.subset',icbc_cycle_hr,'atmos')
-        elif icbc_model == 'GFS':
+        elif icbc_model in variants_gfs:
             # Full-domain grib directory
 #            grib_dir_full = grib_dir_parent.joinpath('gfs',icbc_cycle_yyyymmdd_hh)
             grib_dir_full = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}',icbc_cycle_hr,'atmos')
 
             # Subsetted-domain grib directory
             grib_dir_subset = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}.subset',icbc_cycle_hr,'atmos')
+        elif icbc_model in variants_gfs_fnl:
+            # Full-domain grib directory
+            grib_dir_full = grib_dir_parent.joinpath(f'gfs_fnl.{icbc_cycle_yyyymmdd}', icbc_cycle_hr)
+
+            # Subsetted-domain grib directory
+            grib_dir_subset = grib_dir_parent.joinpath(f'gfs_fnl.{icbc_cycle_yyyymmdd}.subset', icbc_cycle_hr)
         else:
             log.error('ERROR: Unknown option chosen for icbc_model in the yaml file.')
-            log.error('       Current options are GEFS|GFS. Add code to handle other IC/LBC model data. Exiting!')
+            log.error('       Current options are GEFS|GFS|GFS_FNL.')
+            log.error('       Add code to handle other IC/LBC model data.')
+            log.error('Exiting!')
             sys.exit(1)
 
         if ungrib_domain == 'full':
@@ -268,7 +282,8 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         elif ungrib_domain == 'subset':
             grib_dir = grib_dir_subset
         else:
-            log.error('ERROR: Set ungrib_domain to either full or subset in the yaml file. Exiting!')
+            log.error('ERROR: Set ungrib_domain to either full or subset in the yaml file.')
+            log.error('Exiting!')
             sys.exit(1)
 
         ## Get the start and end times of this simulation
@@ -298,12 +313,12 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                     int_hrs = int_sec // 3600
                     break
 
-        if icbc_model == 'GEFS':
+        if icbc_model in variants_gefs:
             if exp_name is None:
                 log.error('ERROR! exp_name is None, so a GEFS member number cannot be extracted. Exiting!')
             ## Make an assumption about which GEFS member to download or linked to based on exp_name
             ## Assume it starts with memNN or expNN, and set NN to the GEFS member to get or link to
-            if exp_name[0:3] == 'mem' or exp_name[0:3] == 'exp':
+            if exp_name[0:3] in ['mem', 'exp']:
                 mem_id = exp_name[3:5]
                 ## If this number exceeds the GEFS members, then base it only on the last number to get member 01-10
                 if int(mem_id) > 20:
@@ -320,28 +335,42 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
         if get_icbc:
             # If an ICBC dataset is locally available on GLADE, use that instead of downloading from an external repo
-            if icbc_model == 'GFS' or icbc_model == 'gfs':
-                if icbc_source == 'GLADE' or icbc_source == 'glade':
+            if icbc_model in variants_gfs:
+                if icbc_source in variants_glade:
                     ret,output = exec_command(
                         ['python', 'link_gfs_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
                          '-i', str(int_hrs), '-o', grib_dir_full], log)
-                elif icbc_source == 'AWS' or icbc_source == 'aws':
+                elif icbc_source in variants_aws:
                     ret,output = exec_command(
                         ['python', 'download_gfs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
                          '-i', str(int_hrs), '-o', grib_dir_full], log)
                 else:
-                    log.error('ERROR: No option yet to download or link to GFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py. Exiting!')
+                    log.error('ERROR: No option yet to download GFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py.')
+                    log.error('Exiting!')
                     sys.exit(1)
-            elif icbc_model == 'GEFS' or icbc_model == 'gefs':
-                if icbc_source == 'GLADE' or icbc_source == 'glade':
-                    log.error('There is no known dataset containing GEFS files on GLADE. Change icbc_source. Exiting!')
+
+            elif icbc_model in variants_gfs_fnl:
+                if icbc_source in variants_glade:
+                    ret,output = exec_command(
+                        ['python', 'link_gfs_fnl_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                         '-i', str(int_hrs), '-o', grib_dir_full], log)
+                else:
+                    log.error('ERROR: No option yet to download GFS_FNL data from icbc_source=' + icbc_source +' in setup_wps_wrf.py.')
+                    log.error('Exiting!')
                     sys.exit(1)
-                elif icbc_source == 'AWS' or icbc_source == 'aws':
+
+            elif icbc_model in variants_gefs:
+                if icbc_source in variants_glade:
+                    log.error('ERROR: There is no known dataset containing GEFS files on GLADE. Change icbc_source.')
+                    log.error('Exiting!')
+                    sys.exit(1)
+                elif icbc_source in variants_aws:
                     ret,output = exec_command(
                         ['python', 'download_gefs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
                          '-i', str(int_hrs), '-m', mem_id, '-o', grib_dir_full, '-f', str(icbc_fc_dt)], log)
                 else:
-                    log.error('ERROR: No option yet to download or link to GEFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py. Exiting!')
+                    log.error('ERROR: No option yet to download or link to GEFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py.')
+                    log.error('Exiting!')
                     sys.exit(1)
 
         if do_geogrid:

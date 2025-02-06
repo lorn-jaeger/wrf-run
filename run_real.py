@@ -21,6 +21,7 @@ import pandas as pd
 import logging
 
 from proc_util import exec_command
+from wps_wrf_util import search_file
 
 this_file = os.path.basename(__file__)
 logging.basicConfig(format=f'{this_file}: %(asctime)s - %(message)s',
@@ -200,6 +201,9 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
         jobid = output.split('.')[0]
         queue = output.split('.')[1]
         log.info('Submitted batch job '+jobid+' to queue '+queue)
+    else:
+        log.error('ERROR: Unknown job scheduler. Exiting!')
+        sys.exit(1)
     time.sleep(long_time)   # give the file system a moment
 
     ## Monitor the progress of real
@@ -217,7 +221,7 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
             status = True
     status = False
     while not status:
-        if 'SUCCESS COMPLETE REAL_EM' in open('rsl.out.0000').read():
+        if search_file(str(run_dir) + '/rsl.out.0000', 'SUCCESS COMPLETE REAL_EM'):
             log.info('SUCCESS! real completed successfully.')
             time.sleep(short_time)  # brief pause to let the file system gather itself
             status = True
@@ -227,22 +231,25 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
                 time.sleep(long_time)
             else:
                 ## Loop through the rsl.error.* files to look for fatal errors
+                # May need to add other error message patterns to search for
+                patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
                 for fname in glob.glob('rsl.error.*'):
-                    ## May need to add other error keywords to search for...
-                    if ('Fatal' in open(fname).read() or 'FATAL' in open(fname).read() or
-                            'ERROR' in open(fname).read() or 'BAD TERMINATION' in open(fname).read() or
-                            'forrtl: severe' in open(fname).read() ):
-                        log.error('ERROR: real.exe failed.')
-                        log.error('Consult '+str(run_dir)+'/'+str(fname)+' for potential error messages.')
-                        log.error('Exiting!')
-                        sys.exit(1)
-                if (os.path.exists('log_real.o'+jobid) and
-                        ('BAD TERMINATION' in open('log_real.o'+jobid).read() or
-                         'ERROR' in open('log_real.o'+jobid).read())):
-                    log.error('ERROR: real.exe failed.')
-                    log.error('Consult '+str(run_dir)+'/log_real.o'+jobid+' for potential error messages.')
-                    log.error('Exiting!')
-                    sys.exit(1)
+                    for pattern in patterns:
+                        if search_file(str(run_dir) + '/' + fname, pattern):
+                            log.error('ERROR: real.exe failed.')
+                            log.error('Consult ' + str(run_dir) + '/' + fname + ' for potential error messages.')
+                            log.error('Exiting!')
+                            sys.exit(1)
+
+                fname = 'log_real.o' + jobid
+                if run_dir.joinpath(fname).is_file():
+                    for pattern in patterns:
+                        if search_file(str(run_dir) + '/' + fname, pattern):
+                            log.error('ERROR: real.exe failed.')
+                            log.error('Consult ' + str(run_dir) + '/' + fname + ' for potential error messages.')
+                            log.error('Exiting!')
+                            sys.exit(1)
+
                 time.sleep(long_time)
 
 

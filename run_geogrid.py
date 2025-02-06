@@ -19,6 +19,7 @@ import shutil
 import datetime as dt
 import logging
 from proc_util import exec_command
+from wps_wrf_util import search_file
 
 this_file = os.path.basename(__file__)
 logging.basicConfig(format=f'{this_file}: %(asctime)s - %(message)s',
@@ -97,6 +98,15 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 	## Copy over the default namelist
 	shutil.copy(tmp_dir.joinpath(nml_tmp), 'namelist.wps')
 
+	# Create the geogrid output directory if it doesn't yet exist
+	with open('namelist.wps', 'r') as in_file:
+		for line in in_file:
+			if line.strip()[0:28] == 'opt_output_from_geogrid_path':
+				# Extract the directory where the geogrid output files are to be written
+				geogrid_out_dir = pathlib.Path(line.split(sep='=')[1].split(sep='\'')[1])
+				# Create the directory if it doesn't exist yet
+				geogrid_out_dir.mkdir(parents=True, exist_ok=True)
+
 	## Clean up old geogrid log files
 	files = glob.glob('geogrid.log*')
 	for file in files:
@@ -129,6 +139,9 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 		log.info('Submitted batch job '+jobid+' to queue '+queue)
 		job_log_filename = 'geogrid.o' + jobid
 		job_err_filename = 'geogrid.e' + jobid
+	else:
+		log.error('ERROR: Unknown job scheduler. Exiting!')
+		sys.exit(1)
 	time.sleep(long_time)	# give the file system a moment
 
 	## Monitor the progress of geogrid
@@ -141,32 +154,23 @@ def main(wps_dir, run_dir, tmp_dir, nml_tmp, scheduler, hostname):
 			status = True
 	status = False
 	while not status:
-		if '*** Successful completion of program geogrid.exe ***' in open('geogrid.log.0000').read():
+		if search_file(str(run_dir) + '/geogrid.log.0000', '*** Successful completion of program geogrid.exe ***'):
 			log.info('SUCCESS! geogrid completed successfully.')
 			time.sleep(short_time)  # brief pause to let the file system gather itself
 			status = True
 		else:
-			## May need to add other error keywords to search for...
-			if ('FATAL' in open('geogrid.log.0000').read() or 'Fatal' in open('geogrid.log.0000').read() or
-					'ERROR' in open('geogrid.log.0000').read()):
-				log.error('ERROR: geogrid.exe failed.')
-				log.error('Consult ' + str(run_dir) + '/geogrid.log.0000 for potential error messages.')
-				log.error('Exiting!')
-				sys.exit(1)
-			elif (os.path.exists(job_log_filename) and
-				  ('BAD TERMINATION' in open(job_log_filename).read() or 'ERROR' in open(job_log_filename).read() or
-				   ('FATAL' in open(job_log_filename).read()) or ('fatal' in open(job_log_filename).read()))):
-				log.error('ERROR: geogrid.exe failed.')
-				log.error('Consult ' + str(run_dir) + '/' + job_log_filename + ' for potential error messages.')
-				log.error('Exiting!')
-				sys.exit(1)
-			elif (os.path.exists(job_err_filename) and
-				  ('BAD TERMINATION' in open(job_err_filename).read() or 'ERROR' in open(job_err_filename).read() or
-				   ('FATAL' in open(job_err_filename).read()) or ('fatal' in open(job_err_filename).read()))):
-				log.error('ERROR: geogrid.exe failed.')
-				log.error('Consult ' + str(run_dir) + '/' + job_err_filename + ' for potential error messages.')
-				log.error('Exiting!')
-				sys.exit(1)
+			# May need to add more error message patterns to search for
+			fnames = ['geogrid.log.0000', job_log_filename, job_err_filename]
+			patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+			for fname in fnames:
+				if run_dir.joinpath(fname).is_file():
+					for pattern in patterns:
+						if search_file(str(run_dir) + '/' + fname, pattern):
+							log.error('ERROR: geogrid.exe failed.')
+							log.error('Consult ' + str(run_dir) + '/' + fname + ' for potential error messages.')
+							log.error('Exiting!')
+							sys.exit(1)
+
 			time.sleep(long_time)
 
 

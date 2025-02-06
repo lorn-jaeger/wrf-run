@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument('-r', '--resolution', default=0.25, type=float,
                         help='resolution of GFS to download (0.25 [default] or 0.5')
     parser.add_argument('-i', '--int_h', default=3, type=int,
-                        help='integer number of hours between GEFS files to download (default: 3)')
+                        help='integer number of hours between GFS files to download (default: 3)')
 
     args = parser.parse_args()
     cycle_dt = args.cycle_dt
@@ -127,7 +127,7 @@ if __name__ == '__main__':
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
-    log.info('\ndownload_gfs_from_aws.py completed successfully.')
+    log.info('\nlink_gfs_from_glade.py completed successfully.')
     log.info('   Beg time: ' + now_time_beg_str)
     log.info('   End time: ' + now_time_end_str)
     log.info('   Run time: ' + str(run_time_tot) + '\n')
