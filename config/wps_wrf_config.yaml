@@ -1,14 +1,15 @@
-sim_hrs: 12
+sim_hrs: 6
 template_dir: /glade/work/jaredlee/workflow/templates
 wps_ins_dir: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar-casper
 wrf_ins_dir: /glade/u/home/jaredlee/programs/WRF-4.6
 wps_run_dir: /glade/derecho/scratch/jaredlee/workflow/wps
 wrf_run_dir: /glade/derecho/scratch/jaredlee/workflow/wrf
-grib_dir: /glade/derecho/scratch/jaredlee/data/gfs
+grib_dir: /glade/derecho/scratch/jaredlee/data/hrrr
 ungrib_domain: full
-icbc_model: GFS
-icbc_source: GLADE
+icbc_model: HRRR
+icbc_source: AWS
 icbc_fc_dt: 0
+hrrr_native: True
 get_icbc: True
 do_geogrid: False
 do_ungrib: True
@@ -19,4 +20,4 @@ do_upp: False
 upp_yaml: /glade/work/jaredlee/workflow/templates/run_upp.yaml
 upp_domains:
   - '1'
-archive: True
+archive: False
