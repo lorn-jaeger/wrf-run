@@ -10,4 +10,5 @@ dependencies:
   - joblib
   - pyyaml
   - pudb
+  - wget
 prefix: /glade/u/apps/opt/conda/envs/npl-2024b

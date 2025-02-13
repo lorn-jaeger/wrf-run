@@ -51,6 +51,8 @@ def parse_args():
     parser.add_argument('-q', '--scheduler', default='pbs', help='string specifying the cluster job scheduler (default: pbs)')
     parser.add_argument('-n', '--mem_id', default=None, help='string specifying the numeric id (with any necessary leading zeros) of the GEFS or other ensemble member so that ./link_grib.csh can link to the correct file (default: None)')
     parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
+    parser.add_argument('-v', '--hrrr_native', action='store_true',
+                        help='If flag present, then ungrib HRRR native-grid data for atmospheric variables and pressure-level data for soil variables, otherwise only ungrib HRRR pressure-level data for all variables')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -67,6 +69,7 @@ def parse_args():
     scheduler = args.scheduler
     mem_id = args.mem_id
     hostname = args.hostname
+    hrrr_native = args.hrrr_native
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
         log.error('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
@@ -103,9 +106,11 @@ def parse_args():
         log.error('ERROR! temp_dir is not specified as an argument in call to run_ungrib.py. Exiting!')
         sys.exit(1)
 
-    return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname
+    return (cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs,
+            icbc_fc_dt, scheduler, mem_id, hostname, hrrr_native)
 
-def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname):
+def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs,
+         icbc_fc_dt, scheduler, mem_id, hostname, hrrr_native):
 
     log.info(f'Running run_ungrib.py from directory: {curr_dir}')
 
@@ -119,6 +124,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     variants_gfs = ['GFS', 'gfs']
     variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
     variants_gefs = ['GEFS', 'gfs']
+    variants_hrrr = ['HRRR', 'hrrr']
 
     cycle_dt = pd.to_datetime(cycle_dt_str, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
@@ -136,9 +142,6 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
     ## Create the ungrib output directory if it doesn't already exist
     out_dir.mkdir(parents=True, exist_ok=True)
-    if icbc_model in variants_gefs:
-        out_dir.joinpath('gefs_a').mkdir(parents=True, exist_ok=True)
-        out_dir.joinpath('gefs_b').mkdir(parents=True, exist_ok=True)
 
     # Create the ungrib output directory if it doesn't already exist (and if it does, delete it first)
     if out_dir.is_dir():
@@ -152,6 +155,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     for tt in range(n_times):
         this_dt = all_dt[tt]
         this_dt_wrf_str = this_dt.strftime(fmt_wrf_dt)
+        this_dt_yyyymmddhh = this_dt.strftime(fmt_yyyymmddhh)
         this_dt_wrf_date_hh = this_dt.strftime(fmt_wrf_date_hh)
         this_dt_yyyymmdd_hh = this_dt.strftime(fmt_yyyymmdd_hh)
         this_dt_yyyymmdd_hhmm = this_dt.strftime(fmt_yyyymmdd_hhmm)
@@ -159,15 +163,23 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
         ## Calculate the lead hour for this cycle, accounting for the possible icbc_fc_dt offset
         lead_h = int((this_dt - cycle_dt).total_seconds() // 3600) + icbc_fc_dt
-        lead_h_str = str(lead_h).zfill(3)
+        lead_h_str3 = str(lead_h).zfill(3)
+        lead_h_str2 = str(lead_h).zfill(2)
 
         os.chdir(run_dir)
         ## We want to ungrib everything as quickly as possible, one file per parallel job
         ## GEFS requires ungribbing two sets of files (a and b), so requires two directories
-        ## HRRR would also require ungribbing two sets of files if native sigma level input is desired above-surface
+        ## HRRR optionally requires ungribbing two sets of files if native sigma level input is desired above-surface
         ## GFS only requires ungribbing one set of files
         if icbc_model in variants_gefs:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_b')
+        elif icbc_model in variants_hrrr:
+            if hrrr_native:
+                # Need to differentiate between hybrid-level HRRR output and pressure-level HRRR output for soil vars
+                ungrib_dir = run_dir.joinpath('ungrib_' + this_dt_yyyymmdd_hh + '_hybr')
+            else:
+                # Only a single round of ungribbing will need to be done on pressure-level HRRR output for atmos & soil
+                ungrib_dir = run_dir.joinpath('ungrib_' + this_dt_yyyymmdd_hh + '_pres')
         else:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh)
         ungrib_dir.mkdir(parents=True, exist_ok=True)
@@ -196,22 +208,31 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             pathlib.Path('Vtable').unlink()
         if pathlib.Path('namelist.wps').is_file():
             pathlib.Path('namelist.wps').unlink()
+
+        ## To speed up ungrib, link only to the specific file for the time being processed, not all gribfiles
         if icbc_model in variants_gfs:
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFS'))
             if icbc_source == 'GLADE' or icbc_source == 'glade':
-                file_pattern = str(grib_dir) + '/gfs.0p25.' + icbc_cycle_datehh + '.f*'
+                file_pattern = str(grib_dir) + '/gfs.0p25.' + icbc_cycle_datehh + '.f' + lead_h_str3 + '.grib2'
             elif icbc_source == 'AWS' or icbc_source == 'aws':
-                file_pattern = str(grib_dir) + '/*t' + icbc_cycle_hr + 'z.pgrb2.0p25.f*'
+                file_pattern = str(grib_dir) + '/gfs.t' + icbc_cycle_hr + 'z.pgrb2.0p25.f' + lead_h_str3
             else:
                 log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS in run_ungrib.py.')
                 log.error('Exiting!')
                 sys.exit(1)
-            # ret,output = exec_command(['./link_grib.csh', file_pattern],log)
             shutil.copy(temp_dir.joinpath('namelist.wps.gfs'), 'namelist.wps.template')
         elif icbc_model in variants_gfs_fnl:
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.GFS'))
             if icbc_source in variants_glade:
-                file_pattern = str(grib_dir) + '/gdas1.fnl0p25.*.grib2'
+                # Leverage the fact that GFS FNL files on GLADE are 3-hourly, with new cycles every 6 h
+                if this_dt_yyyymmddhh[8:10] in ['00', '06', '12', '18']:
+                    file_pattern = str(grib_dir) + '/gdas1.fnl0p25.' + this_dt_yyyymmddhh + '.f00.grib2'
+                elif this_dt_yyyymmddhh[8:10] in ['03', '09', '15', '21']:
+                    file_pattern = str(grib_dir) + '/gdas1.fnl0p25.' + this_dt_yyyymmddhh + '.f03.grib2'
+                else:
+                    log.error('ERROR: this_dt_yyyymmddhh = ' + this_dt_yyyymmddhh + ', which means no GFS FNL file exists for this time.')
+                    log.error('Exiting!')
+                    sys.exit(1)
             else:
                 log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS_FNL in run_ungrib.py.')
                 log.error('Exiting!')
@@ -219,9 +240,17 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             shutil.copy(temp_dir.joinpath('namelist.wps.gfs_fnl'), 'namelist.wps.template')
         elif icbc_model in variants_gefs:
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFSENS'))
-            file_pattern = str(grib_dir) + '/pgrb2bp5/gep' + mem_id + '.t' + icbc_cycle_hr + 'z.pgrb2b.0p50.f' + lead_h_str
-            # ret,output = exec_command(['./link_grib.csh',str(grib_dir)+'/pgrb2bp5/gep'+mem_id+'.t'+icbc_cycle_hr+'z.pgrb2b.0p50.f'+lead_h_str],log)
+            file_pattern = str(grib_dir) + '/pgrb2bp5/gep' + mem_id + '.t' + icbc_cycle_hr + 'z.pgrb2b.0p50.f' + lead_h_str3
             shutil.copy(temp_dir.joinpath('namelist.wps.gefs_b'), 'namelist.wps.template')
+        elif icbc_model in variants_hrrr:
+            pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.raphrrr'))
+            if hrrr_native:
+                # Process native-grid HRRR output first, for atmospheric variables only (wrfnat files don't have soil)
+                file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfnatf' + lead_h_str2 + '.grib2'
+            else:
+                # Process pressure-grid HRRR output only, for both atmospheric & soil variables
+                file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+            shutil.copy(temp_dir.joinpath('namelist.wps.hrrr'), 'namelist.wps.template')
         else:
             log.error('ERROR: Unrecognized icbc_model in run_ungrib.py.')
             log.error('Exiting!')
@@ -247,6 +276,11 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                         out_file.write(" prefix = '" + str(ungrib_dir) + "/GFS_FNL',\n")
                     elif icbc_model in variants_gefs:
                         out_file.write(" prefix = '"+str(ungrib_dir)+"/GEFS_B',\n")
+                    elif icbc_model in variants_hrrr:
+                        if hrrr_native:
+                            out_file.write(" prefix = '"+str(ungrib_dir)+"/HRRR_hybr',\n")
+                        else:
+                            out_file.write(" prefix = '"+str(ungrib_dir)+"/HRRR_pres',\n")
                     else:
                         out_file.write(" prefix = '"+str(ungrib_dir)+"/FILE',\n")
                 else:
@@ -260,6 +294,11 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             ungribbed_file = ungrib_dir.joinpath('GFS_FNL:' + this_dt_wrf_date_hh)
         elif icbc_model in variants_gefs:
             ungribbed_file = ungrib_dir.joinpath('GEFS_B:' + this_dt_wrf_date_hh)
+        elif icbc_model in variants_hrrr:
+            if hrrr_native:
+                ungribbed_file = ungrib_dir.joinpath('HRRR_hybr:' + this_dt_wrf_date_hh)
+            else:
+                ungribbed_file = ungrib_dir.joinpath('HRRR_pres:' + this_dt_wrf_date_hh)
         else:
             ungribbed_file = ungrib_dir.joinpath('FILE:' + this_dt_wrf_date_hh)
         if ungribbed_file.is_file():
@@ -303,6 +342,11 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
         if icbc_model in variants_gefs:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_b')
+        elif icbc_model in variants_hrrr:
+            if hrrr_native:
+                ungrib_dir = run_dir.joinpath('ungrib_' + this_dt_yyyymmdd_hh + '_hybr')
+            else:
+                ungrib_dir = run_dir.joinpath('ungrib_' + this_dt_yyyymmdd_hh + '_pres')
         else:
             ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh)
         os.chdir(ungrib_dir)
@@ -349,14 +393,20 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             ret,output = exec_command(['mv', 'GFS_FNL:' + this_dt_wrf_date_hh, str(out_dir)], log)
         elif icbc_model in variants_gefs:
             ret,output = exec_command(['mv', 'GEFS_B:' + this_dt_wrf_date_hh, str(out_dir)], log)
+        elif icbc_model in variants_hrrr:
+            if hrrr_native:
+                ret, output = exec_command(['mv', 'HRRR_hybr:' + this_dt_wrf_date_hh, str(out_dir)], log)
+            else:
+                ret, output = exec_command(['mv', 'HRRR_pres:' + this_dt_wrf_date_hh, str(out_dir)], log)
         else:
             ret,output = exec_command(['mv', 'FILE:' + this_dt_wrf_date_hh, str(out_dir)], log)
 
     ## If GEFS, run ungrib for the a files, too
+    # Or if HRRR and using native-grid output for atmospheric vars, run ungrib on pressure-level output for soil vars
     ## Could potentially merge this back in with loop above to get through all ungrib processes a bit faster,
     ## but keeping them as two separate code blocks is a little bit cleaner/easier to read. Maybe could do
     ## the same thing by making much of this code into a function.
-    if icbc_model in variants_gefs:
+    if icbc_model in variants_gefs or (icbc_model in variants_hrrr and hrrr_native):
 
         # Re-initialize empty jobid list to be filled in later to allow tracking of each ungrib job
         jobid_list = [''] * n_times
@@ -372,9 +422,17 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
             ## Calculate the lead hour for this cycle, accounting for the possible icbc_fc_dt offset
             lead_h = int((this_dt - cycle_dt).total_seconds() // 3600) + icbc_fc_dt
-            lead_h_str = str(lead_h).zfill(3)
+            lead_h_str3 = str(lead_h).zfill(3)
+            lead_h_str2 = str(lead_h).zfill(2)
 
-            ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_a')
+            if icbc_model in variants_gefs:
+                ungrib_dir = run_dir.joinpath('ungrib_' + this_dt_yyyymmdd_hh + '_a')
+            elif icbc_model in variants_hrrr:
+                ungrib_dir = run_dir.joinpath('ungrib_' + this_dt_yyyymmdd_hh + '_soil')
+            else:
+                log.error('ERROR: Unknown icbc_model option in the second ungrib loop in run_ungrib.py.')
+                log.error('Exiting!')
+                sys.exit(1)
             ungrib_dir.mkdir(parents=True, exist_ok=True)
             os.chdir(ungrib_dir)
 
@@ -400,9 +458,29 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 pathlib.Path('Vtable').unlink()
             if pathlib.Path('namelist.wps').is_file():
                 pathlib.Path('namelist.wps').unlink()
-            pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFSENS'))
-            ret,output = exec_command(['./link_grib.csh',str(grib_dir)+'/pgrb2ap5/gep'+mem_id+'.t'+icbc_cycle_hr+'z.pgrb2a.0p50.f'+lead_h_str],log)
-            shutil.copy(temp_dir.joinpath('namelist.wps.gefs_a'), 'namelist.wps.template')
+
+            # To speed up ungrib, link only to the specific file for the time being processed, not all gribfiles
+            if icbc_model in variants_gefs:
+                pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib','Variable_Tables','Vtable.GFSENS'))
+                file_pattern = 'pgrb2ap5/gep' + mem_id + '.t' + icbc_cycle_hr + 'z.pgrb2a.0p50.f' + lead_h_str3
+                shutil.copy(temp_dir.joinpath('namelist.wps.gefs_a'), 'namelist.wps.template')
+            elif icbc_model in variants_hrrr:
+                vtable_soil = wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.raphrrr.soil_only')
+                if not vtable_soil.is_file():
+                    log.error('ERROR: File ' + str(vtable_soil) + ' not found.')
+                    log.error('Please ensure there is a Vtable by this name available to process only soil variables.')
+                    log.error('Exiting!')
+                    sys.exit(1)
+                pathlib.Path('Vtable').symlink_to(vtable_soil)
+                file_pattern = 'hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+                shutil.copy(temp_dir.joinpath('namelist.wps.hrrr'), 'namelist.wps.template')
+            else:
+                log.error('ERROR: Unknown icbc_model option in the second ungrib loop in run_ungrib.py.')
+                log.error('Exiting!')
+                sys.exit(1)
+
+            # Now run link_grib.csh
+            ret, output = exec_command(['./link_grib.csh', str(grib_dir) + '/' + file_pattern], log)
 
             ## Modify the namelist for this date, running ungrib separately on each grib file
             with open('namelist.wps.template', 'r') as in_file, open('namelist.wps', 'w') as out_file:
@@ -412,12 +490,22 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                     elif line.strip()[0:8] == 'end_date':
                         out_file.write(" end_date   = '"+this_dt_wrf_str+"',\n")
                     elif line.strip()[0:6] == 'prefix':
-                        out_file.write(" prefix = '"+str(ungrib_dir)+"/GEFS_A',\n")
+                        if icbc_model in variants_gefs:
+                            out_file.write(" prefix = '"+str(ungrib_dir)+"/GEFS_A',\n")
+                        elif icbc_model in variants_hrrr:
+                            out_file.write(" prefix = '"+str(ungrib_dir)+"/HRRR_soil',\n")
                     else:
                         out_file.write(line)
 
             ## If the expected output file already exists, delete it first
-            ungribbed_file = ungrib_dir.joinpath('GEFS_A:'+this_dt_wrf_date_hh)
+            if icbc_model in variants_gefs:
+                ungribbed_file = ungrib_dir.joinpath('GEFS_A:' + this_dt_wrf_date_hh)
+            elif icbc_model in variants_hrrr:
+                ungribbed_file = ungrib_dir.joinpath('HRRR_soil' + this_dt_wrf_date_hh)
+            else:
+                log.error('ERROR: Unknown icbc_model option in the second ungrib loop in run_ungrib.py.')
+                log.error('Exiting!')
+                sys.exit(1)
             if ungribbed_file.is_file():
                 ungribbed_file.unlink()
 
@@ -456,8 +544,15 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             this_dt = all_dt[tt]
             this_dt_yyyymmdd_hh = this_dt.strftime(fmt_yyyymmdd_hh)
             this_dt_wrf_date_hh = this_dt.strftime(fmt_wrf_date_hh)
-         
-            ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_a')
+
+            if icbc_model in variants_gefs:
+                ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_a')
+            elif icbc_model in variants_hrrr:
+                ungrib_dir = run_dir.joinpath('ungrib_'+this_dt_yyyymmdd_hh+'_soil')
+            else:
+                print('ERROR: Unknown icbc_model option in the second ungrib loop in run_ungrib.py.')
+                print('Exiting!')
+                sys.exit(1)
             os.chdir(ungrib_dir)
 
             ## First, ensure the job is running/did run and created a log file
@@ -496,15 +591,20 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                     time.sleep(long_time)
 
             # Now move each ungribbed file to the main ungrib directory, where metgrid will expect to find them all
-            ret, output = exec_command(['mv', 'GEFS_A:' + this_dt_wrf_date_hh, str(out_dir)], log)
+            if icbc_model in variants_gefs:
+                ret, output = exec_command(['mv', 'GEFS_A:' + this_dt_wrf_date_hh, str(out_dir)], log)
+            elif icbc_model in variants_hrrr:
+                ret, output = exec_command(['mv', 'HRRR_soil:' + this_dt_wrf_date_hh, str(out_dir)], log)
 
     log.info('SUCCESS! All ungrib jobs completed successfully.')
 
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
-    cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname = parse_args()
-    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt, scheduler, mem_id, hostname)
+    (cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt,
+     scheduler, mem_id, hostname, hrrr_native) = parse_args()
+    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt,
+         scheduler, mem_id, hostname, hrrr_native)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')

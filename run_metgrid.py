@@ -47,6 +47,8 @@ def parse_args():
     parser.add_argument('-n', '--nml_tmp', default=None, help='string for filename of namelist template (default: namelist.wps.icbc_model, with icbc_model in lower-case)')
     parser.add_argument('-q', '--scheduler', default='pbs', help='string specifying the cluster job scheduler (default: pbs)')
     parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
+    parser.add_argument('-v', '--hrrr_native', action='store_true',
+                        help='If flag present, then use HRRR native-grid data for atmospheric variables and pressure-level data for soil variables, otherwise only use HRRR pressure-level data for all variables')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -60,6 +62,7 @@ def parse_args():
     nml_tmp = args.nml_tmp
     scheduler = args.scheduler
     hostname = args.hostname
+    hrrr_native = args.hrrr_native
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
         log.error('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
@@ -100,9 +103,11 @@ def parse_args():
         ## Make a default assumption about what namelist template we want to use
         nml_tmp = 'namelist.wps.'+icbc_model.lower()
 
-    return cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname
+    return (cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler,
+            hostname, hrrr_native)
 
-def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname):
+def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler,
+         hostname, hrrr_native):
 
     log.info(f'Running run_metgrid.py from directory: {curr_dir}')
 
@@ -114,6 +119,7 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
     variants_gfs = ['GFS', 'gfs']
     variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
     variants_gefs = ['GEFS', 'gefs']
+    variants_hrrr = ['HRRR', 'hrrr']
 
     cycle_dt = pd.to_datetime(cycle_dt_beg, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
@@ -160,6 +166,14 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
                     out_file.write(" fg_name = '" + str(ungrib_dir) + "/GFS_FNL',\n")
                 elif icbc_model in variants_gefs:
                     out_file.write(" fg_name = '"+str(ungrib_dir)+"/GEFS_B','"+str(ungrib_dir)+"/GEFS_A',\n")
+                elif icbc_model in variants_hrrr:
+                    if hrrr_native:
+                        # If using native-grid HRRR output for atmos vars, then also need to have soil vars from pres
+                        out_file.write(" fg_name = '" + str(ungrib_dir) + "/HRRR_hybr','" +
+                                       str(ungrib_dir) + "/HRRR_soil',\n")
+                    else:
+                        # Otherwise, just use pressure-level HRRR output for both atmospheric & soil variables
+                        out_file.write(" fg_name = '" + str(ungrib_dir) + "/HRRR_pres',\n")
                 else:
                     out_file.write(" fg_name = '" + str(ungrib_dir) + "/FILE',\n")
             elif line.strip()[0:28] == 'opt_output_from_metgrid_path':
@@ -241,8 +255,10 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
-    cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname = parse_args()
-    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname)
+    (cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname,
+     hrrr_native) = parse_args()
+    main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname,
+         hrrr_native)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
