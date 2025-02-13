@@ -142,9 +142,6 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 
     ## Create the ungrib output directory if it doesn't already exist
     out_dir.mkdir(parents=True, exist_ok=True)
-    # if icbc_model in variants_gefs:
-    #     out_dir.joinpath('gefs_a').mkdir(parents=True, exist_ok=True)
-    #     out_dir.joinpath('gefs_b').mkdir(parents=True, exist_ok=True)
 
     # Create the ungrib output directory if it doesn't already exist (and if it does, delete it first)
     if out_dir.is_dir():
