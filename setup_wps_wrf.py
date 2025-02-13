@@ -42,6 +42,7 @@ def parse_args():
      'archive': 'flag to archive wrfout, wrfinput, wrfbdy, and namelist files to another location',
      'icbc_model': 'string specifying the model to be used for ICs/LBCs (default: GEFS)',
      'icbc_source': 'string specifying the repository from which to obtain ICs/LBCs (GLADE, AWS, GoogleCloud, NOMADS) (default: GLADE)',
+     'hrrr_native': 'flag to download HRRR native-grid atmospheric data for ICs/LBCs (default: True)',
      'grib_dir': 'string or Path object specifying the parent directory for where grib/grib2 input data (e.g., GEFS, GFS, etc.) is downloaded for use by ungrib (default: /glade/derecho/scratch/jaredlee/data',
      'ungrib_domain': 'string (either "full" or "subset") indicating whether to run ungrib on full-domain or geographically-subsetted grib/grib2 files (default: full)',
      'wps_ins_dir': 'string or Path object specifying the WPS installation directory (default: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar)',
@@ -109,6 +110,7 @@ def parse_args():
     params.setdefault('ungrib_domain', 'full')
     params.setdefault('icbc_model', 'GFS')
     params.setdefault('icbc_source', 'GLADE')
+    params.setdefault('hrrr_native', True)
     params.setdefault('grib_dir', '/glade/derecho/scratch/jaredlee/data')
     params.setdefault('wps_ins_dir', '/glade/u/home/jaredlee/programs/WPS-4.6-dmpar')
     params.setdefault('wrf_ins_dir', '/glade/u/home/jaredlee/programs/WRF-4.6')
@@ -163,7 +165,7 @@ def parse_args():
     return params
 
 def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, exp_name, realtime, archive, hostname,
-         now_time_beg, icbc_model, icbc_source, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir,
+         now_time_beg, icbc_model, icbc_source, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir, hrrr_native,
          wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
          upp_working_dir, upp_yaml, upp_domains,
          get_icbc, do_geogrid, do_ungrib, do_metgrid, do_real, do_wrf, do_upp):
@@ -177,9 +179,12 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
     variants_aws = ['AWS', 'aws']
     variants_glade = ['GLADE', 'glade']
+    variants_gc = ['GoogleCloud', 'googlecloud', 'Google_Cloud', 'google_cloud', 'GC', 'gc']
+
     variants_gfs = ['GFS', 'gfs']
     variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
     variants_gefs = ['GEFS', 'gefs']
+    variants_hrrr = ['HRRR', 'hrrr']
 
     ## Date/time manipulation
     cycle_dt_beg = pd.to_datetime(cycle_dt_str_beg, format=fmt_yyyymmdd_hh)
@@ -270,9 +275,15 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
             # Subsetted-domain grib directory
             grib_dir_subset = grib_dir_parent.joinpath(f'gfs_fnl.{icbc_cycle_yyyymmdd}.subset', icbc_cycle_hr)
+        elif icbc_model in variants_hrrr:
+            # Full-domain grib directory
+            grib_dir_full = grib_dir_parent.joinpath(f'hrrr.{icbc_cycle_yyyymmdd}', icbc_cycle_hr)
+
+            # Subsetted-domain grib directory
+            grib_dir_subset = grib_dir_parent.joinpath(f'hrrr.{icbc_cycle_yyyymmdd}.subset', icbc_cycle_hr)
         else:
             log.error('ERROR: Unknown option chosen for icbc_model in the yaml file.')
-            log.error('       Current options are GEFS|GFS|GFS_FNL.')
+            log.error('       Current options are GEFS|GFS|GFS_FNL|HRRR.')
             log.error('       Add code to handle other IC/LBC model data.')
             log.error('Exiting!')
             sys.exit(1)
@@ -337,123 +348,107 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
             # If an ICBC dataset is locally available on GLADE, use that instead of downloading from an external repo
             if icbc_model in variants_gfs:
                 if icbc_source in variants_glade:
-                    ret,output = exec_command(
-                        ['python', 'link_gfs_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                         '-i', str(int_hrs), '-o', grib_dir_full], log)
+                    script_name = 'link_gfs_from_glade.py'
                 elif icbc_source in variants_aws:
-                    ret,output = exec_command(
-                        ['python', 'download_gfs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                         '-i', str(int_hrs), '-o', grib_dir_full], log)
+                    script_name = 'download_gfs_from_aws.py'
                 else:
                     log.error('ERROR: No option yet to download GFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py.')
                     log.error('Exiting!')
                     sys.exit(1)
-
+                cmd_list = ['python', script_name, '-b', icbc_cycle_str, '-s', str(sim_hrs), '-i', str(int_hrs),
+                            '-o', grib_dir_full]
             elif icbc_model in variants_gfs_fnl:
                 if icbc_source in variants_glade:
-                    ret,output = exec_command(
-                        ['python', 'link_gfs_fnl_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                         '-i', str(int_hrs), '-o', grib_dir_full], log)
+                    cmd_list = ['python', 'link_gfs_fnl_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                         '-i', str(int_hrs), '-o', grib_dir_full]
                 else:
                     log.error('ERROR: No option yet to download GFS_FNL data from icbc_source=' + icbc_source +' in setup_wps_wrf.py.')
                     log.error('Exiting!')
                     sys.exit(1)
-
             elif icbc_model in variants_gefs:
                 if icbc_source in variants_glade:
                     log.error('ERROR: There is no known dataset containing GEFS files on GLADE. Change icbc_source.')
                     log.error('Exiting!')
                     sys.exit(1)
                 elif icbc_source in variants_aws:
-                    ret,output = exec_command(
-                        ['python', 'download_gefs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                         '-i', str(int_hrs), '-m', mem_id, '-o', grib_dir_full, '-f', str(icbc_fc_dt)], log)
+                    cmd_list = ['python', 'download_gefs_from_aws.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                         '-i', str(int_hrs), '-m', mem_id, '-o', grib_dir_full, '-f', str(icbc_fc_dt)]
                 else:
                     log.error('ERROR: No option yet to download or link to GEFS data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py.')
                     log.error('Exiting!')
                     sys.exit(1)
+            elif icbc_model in variants_hrrr:
+                if icbc_source in variants_glade:
+                    log.error('ERROR: There is no known dataset containing HRRR files on GLADE. Change icbc_source.')
+                    log.error('Exiting!')
+                    sys.exit(1)
+                elif icbc_source in variants_gc:
+                    cmd_list = ['python', 'download_hrrr_from_google_cloud.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                            '-i', str(int_hrs), '-o', grib_dir_full, '-f', str(icbc_fc_dt)]
+                    if hrrr_native:
+                        cmd_list.append('-n')
+                else:
+                    log.error('ERROR: No option yet to download or link to HRRR data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py.')
+                    log.error('Exiting!')
+                    sys.exit(1)
+            else:
+                log.error('ERROR: Unknown option for icbc_model in the get_icbc branch of setup_wps_wrf.py.')
+                log.error('Exiting!')
+                sys.exit(1)
+
+            # Execute the command to get ICs/LBCs
+            ret, output = exec_command(cmd_list, log)
 
         if do_geogrid:
-            ret,output = exec_command(
-                ['python', 'run_geogrid.py', '-w', wps_ins_dir, '-r', geo_run_dir, '-t', template_dir,
-                 '-n', wps_nml_tmp, '-q', scheduler, '-a', hostname], log)
+            cmd_list = ['python', 'run_geogrid.py', '-w', wps_ins_dir, '-r', geo_run_dir, '-t', template_dir,
+                 '-n', wps_nml_tmp, '-q', scheduler, '-a', hostname]
+            ret, output = exec_command(cmd_list, log)
 
         if do_ungrib:
-            if mem_id is None:
-                ret, output = exec_command(
-                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
-                     '-r', wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model,
-                     '-i', str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-a', hostname, '-c', icbc_source],
-                    log)
-            else:
-                ret,output = exec_command(
-                    ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
-                     '-r', wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model,
-                     '-i', str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-a', hostname, '-c', icbc_source,
-                     '-n', mem_id], log)
+            cmd_list = ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
+                        '-r', wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model,
+                        '-i', str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-a', hostname, '-c', icbc_source]
+            if hrrr_native:
+                cmd_list.append('-v')
+            if mem_id is not None:
+                cmd_list.append(['-n', mem_id])
+            ret, output = exec_command(cmd_list, log)
 
         if do_metgrid:
-            ret,output = exec_command(
-                ['python', 'run_metgrid.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
-                 '-r', wps_run_dir, '-o', metgrid_dir, '-u', ungrib_dir, '-t', template_dir, '-m', icbc_model,
-                 '-q', scheduler, '-a', hostname], log)
+            cmd_list = ['python', 'run_metgrid.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
+                        '-r', wps_run_dir, '-o', metgrid_dir, '-u', ungrib_dir, '-t', template_dir, '-m', icbc_model,
+                        '-q', scheduler, '-a', hostname]
+            if hrrr_native:
+                cmd_list.append('-v')
+            ret, output = exec_command(cmd_list, log)
 
         if do_real:
-            if exp_name is None:
-                ret, output = exec_command(
-                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+            cmd_list = ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
                      '-r', wrf_run_dir, '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp,
-                     '-q', scheduler, '-a', hostname], log)
-            else:
-                ret, output = exec_command(
-                    ['python', 'run_real.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
-                     '-r', wrf_run_dir, '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name,
-                     '-n', wrf_nml_tmp, '-q', scheduler, '-a', hostname], log)
+                     '-q', scheduler, '-a', hostname]
+            if exp_name is not None:
+                cmd_list.append(['-x', exp_name])
+            ret, output = exec_command(cmd_list, log)
 
         if do_wrf:
-           if do_upp or archive:
-               if exp_name is None:
-                   ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
+            cmd_list = ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
                         '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-m',
-                        '-q', scheduler, '-a', hostname], log)
-               else:
-                   ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
-                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp,
-                        '-m', '-q', scheduler, '-a', hostname], log)
-           else:
-               if exp_name is None:
-                   ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
-                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-q', scheduler,
-                        '-a', hostname], log)
-               else:
-                   ret, output = exec_command(
-                       ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
-                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-x', exp_name, '-n', wrf_nml_tmp,
-                        '-q', scheduler, '-a', hostname], log)
+                        '-q', scheduler, '-a', hostname]
+            if exp_name is not None:
+                cmd_list.append(['-x', exp_name])
+            if do_upp or archive:
+                cmd_list.append('-m')
+            ret, output = exec_command(cmd_list, log)
 
         if do_upp:
+            cmd_list = ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-c', upp_yaml, '-N']
+            if exp_name is not None:
+                cmd_list.append(['-x', exp_name])
             if upp_domains and len(upp_domains) > 0 and upp_domains[0] > 0:
                 domains_str = str(upp_domains).strip().replace('[', '').replace(']', '').replace(' ', '')
                 log.info(f'Sending domains_str to run_upp: {domains_str}')
-                if exp_name is None:
-                    ret, output = exec_command(
-                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-d', str(domains_str),
-                         '-c', upp_yaml, '-N'], log)
-                else:
-                    ret, output = exec_command(
-                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-x', exp_name, '-d',
-                         str(domains_str), '-c', upp_yaml, '-N'], log)
-            else:
-                if exp_name is None:
-                    ret, output = exec_command(
-                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-c', upp_yaml, '-N'], log)
-                else:
-                    ret, output = exec_command(
-                        ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-x', exp_name, '-c', upp_yaml,
-                         '-N'], log)
+                cmd_list.append(['-d', str(domains_str)])
+            ret, output = exec_command(cmd_list, log)
 
             # # TODO: Take this out after testing
             # if not upp_yaml.exists():
