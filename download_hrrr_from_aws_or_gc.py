@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 '''
-download_hrrr_from_google_cloud.py
+download_hrrr_from_aws_or_gc.py
 
 Created by: Jared A. Lee (jaredlee@ucar.edu)
 Created on: 6 Feb 2025
 
-This script downloads HRRR output files for the requested cycle(s) and lead times.
+This script downloads HRRR output files for the requested cycle(s) and lead times from either AWS or Google Cloud.
 '''
 
 import os
@@ -46,6 +46,8 @@ def parse_args():
                         help='integer number of hours between GEFS files to download (default: 3)')
     parser.add_argument('-n', '--native_grid', action='store_true',
                         help='If flag present, then download HRRR native-grid data for atmospheric variables, otherwise only download HRRR pressure-level data.')
+    parser.add_argument('-c', '--icbc_source', default='AWS',
+                        help='Repository from which to download HRRR data files (AWS|Google Cloud) (default: AWS)')
 
     args = parser.parse_args()
     cycle_dt = args.cycle_dt
@@ -54,6 +56,7 @@ def parse_args():
     icbc_fc_dt = args.icbc_fc_dt
     int_h = args.int_h
     native_grid = args.native_grid
+    icbc_source = args.icbc_source
 
     if len(cycle_dt) != 11:
         log.error('ERROR! Incorrect length for positional argument cycle_dt. Exiting!')
@@ -71,7 +74,7 @@ def parse_args():
     else:
         out_dir = pathlib.Path(out_dir)
 
-    return cycle_dt, sim_hrs, out_dir, icbc_fc_dt, int_h, native_grid
+    return cycle_dt, sim_hrs, out_dir, icbc_fc_dt, int_h, native_grid, icbc_source
 
 def wget_error(error_msg, now_time_beg):
     log.error('ERROR: '+error_msg)
@@ -86,7 +89,16 @@ def wget_error(error_msg, now_time_beg):
     log.error('   Run time: '+str(run_time_tot)+'\n')
     sys.exit(1)
 
-def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, native_grid):
+def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, native_grid, icbc_source):
+
+    # Be very forgiving for variants of specifying GoogleCloud for the repository
+    variants_aws = ['AWS', 'aws']
+    variants_gc = ['GoogleCloud', 'googlecloud', 'Google_Cloud', 'google_cloud', 'GC', 'gc', 'GCloud', 'gcloud']
+    if icbc_source not in variants_aws and icbc_source not in variants_gc:
+        log.error('ERROR: Unknown icbc_source for downloading HRRR data: ' + icbc_source)
+        log.error('Expected AWS or GoogleCloud (or some other variants thereof).')
+        log.error('Exiting!')
+        sys.exit(1)
 
     ## Calculate the desired lead hours for this cycle, accounting for the possible icbc_fc_dt offset.
     ## Build array of forecast lead times to download. GFS output on AWS is 1-hourly.
@@ -102,7 +114,7 @@ def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, nat
     cycle_date = cycle_dt.strftime(fmt_yyyymmdd)
     cycle_hour = cycle_dt.strftime(fmt_hh)
 
-    # Google Cloud archives HRRR data back to the 20140730_18 cycle
+    # Both AWS and Google Cloud archive HRRR data back to the 20140730_18 cycle
     if cycle_dt < pd.to_datetime('20140730_18', format=fmt_yyyymmdd_hh):
         log.error('ERROR! HRRR data prior to the 20140730_18 cycle is not available on Google Cloud.')
         log.error('You chose ' + cycle_dt_str + ' for a cycle start date/time.')
@@ -110,10 +122,15 @@ def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, nat
         log.error('Exiting!')
         sys.exit(1)
 
-    # Directory structure for HRRR data on Google Cloud
+    # Directory structure for HRRR data on AWS and Google Cloud
     # All dates have conus directory. Some later dates have other domain directories (e.g., alaska).
     # TODO: Someday, allow users to request HRRR domains other than conus
+    aws_dir = 'https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.' + cycle_date + '/conus'
     gc_dir = 'https://storage.googleapis.com/high-resolution-rapid-refresh/hrrr.' + cycle_date + '/conus'
+    if icbc_source in variants_aws:
+        host_dir = aws_dir
+    elif icbc_source in variants_gc:
+        host_dir = gc_dir
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -125,7 +142,7 @@ def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, nat
         # Download HRRR native-grid files if specified (atmosphere-only, no soil data)
         if native_grid:
             fname = 'hrrr.t' + cycle_hour + 'z.wrfnatf' + this_lead + '.grib2'
-            url = gc_dir+'/'+fname
+            url = host_dir+'/'+fname
 
             if not out_dir.joinpath(fname).is_file():
                 log.info('Downloading '+url)
@@ -140,7 +157,7 @@ def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, nat
 
         # Download HRRR pressure-level files no matter what (atmosphere + soil)
         fname = 'hrrr.t' + cycle_hour + 'z.wrfprsf' + this_lead + '.grib2'
-        url = gc_dir+'/'+fname
+        url = host_dir+'/'+fname
 
         if not out_dir.joinpath(fname).is_file():
             log.info('Downloading '+url)
@@ -156,8 +173,8 @@ def main(cycle_dt_str, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, interval, nat
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
-    cycle_dt, sim_hrs, out_dir, icbc_fc_dt, int_h, native_grid = parse_args()
-    main(cycle_dt, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, int_h, native_grid)
+    cycle_dt, sim_hrs, out_dir, icbc_fc_dt, int_h, native_grid, icbc_source = parse_args()
+    main(cycle_dt, sim_hrs, out_dir, icbc_fc_dt, now_time_beg, int_h, native_grid, icbc_source)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')

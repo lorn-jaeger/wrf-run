@@ -179,7 +179,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
     variants_aws = ['AWS', 'aws']
     variants_glade = ['GLADE', 'glade']
-    variants_gc = ['GoogleCloud', 'googlecloud', 'Google_Cloud', 'google_cloud', 'GC', 'gc']
+    variants_gc = ['GoogleCloud', 'googlecloud', 'Google_Cloud', 'google_cloud', 'GC', 'gc', 'GCloud', 'gcloud']
 
     variants_gfs = ['GFS', 'gfs']
     variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
@@ -382,9 +382,9 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                     log.error('ERROR: There is no known dataset containing HRRR files on GLADE. Change icbc_source.')
                     log.error('Exiting!')
                     sys.exit(1)
-                elif icbc_source in variants_gc:
-                    cmd_list = ['python', 'download_hrrr_from_google_cloud.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                            '-i', str(int_hrs), '-o', grib_dir_full, '-f', str(icbc_fc_dt)]
+                elif icbc_source in variants_gc or icbc_source in variants_aws:
+                    cmd_list = ['python', 'download_hrrr_from_aws_or_gc.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
+                            '-i', str(int_hrs), '-o', grib_dir_full, '-f', str(icbc_fc_dt), '-c', icbc_source]
                     if hrrr_native:
                         cmd_list.append('-n')
                 else:
