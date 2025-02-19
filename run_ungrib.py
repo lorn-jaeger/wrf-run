@@ -126,6 +126,9 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     variants_gefs = ['GEFS', 'gfs']
     variants_hrrr = ['HRRR', 'hrrr']
 
+    # Any custom grib Vtables (i.e., not part of the WPS distribution) should be stored as part of this repo
+    vtable_dir = pathlib.Path(curr_dir).joinpath('custom_vtables')
+
     cycle_dt = pd.to_datetime(cycle_dt_str, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
     end_dt = beg_dt + dt.timedelta(hours=sim_hrs)
@@ -243,13 +246,14 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             file_pattern = str(grib_dir) + '/pgrb2bp5/gep' + mem_id + '.t' + icbc_cycle_hr + 'z.pgrb2b.0p50.f' + lead_h_str3
             shutil.copy(temp_dir.joinpath('namelist.wps.gefs_b'), 'namelist.wps.template')
         elif icbc_model in variants_hrrr:
-            pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.raphrrr'))
             if hrrr_native:
                 # Process native-grid HRRR output first, for atmospheric variables only (wrfnat files don't have soil)
                 file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfnatf' + lead_h_str2 + '.grib2'
+                pathlib.Path('Vtable').symlink_to(vtable_dir.joinpath('Vtable.raphrrr.hybr'))
             else:
                 # Process pressure-grid HRRR output only, for both atmospheric & soil variables
                 file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+                pathlib.Path('Vtable').symlink_to(vtable_dir.joinpath('Vtable.raphrrr.pres'))
             shutil.copy(temp_dir.joinpath('namelist.wps.hrrr'), 'namelist.wps.template')
         else:
             log.error('ERROR: Unrecognized icbc_model in run_ungrib.py.')
@@ -465,7 +469,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 file_pattern = 'pgrb2ap5/gep' + mem_id + '.t' + icbc_cycle_hr + 'z.pgrb2a.0p50.f' + lead_h_str3
                 shutil.copy(temp_dir.joinpath('namelist.wps.gefs_a'), 'namelist.wps.template')
             elif icbc_model in variants_hrrr:
-                vtable_soil = wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.raphrrr.soil_only')
+                vtable_soil = vtable_dir.joinpath('Vtable.raphrrr.soil_only')
                 if not vtable_soil.is_file():
                     log.error('ERROR: File ' + str(vtable_soil) + ' not found.')
                     log.error('Please ensure there is a Vtable by this name available to process only soil variables.')
