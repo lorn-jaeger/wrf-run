@@ -239,8 +239,39 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         wps_nml_tmp = 'namelist.wps.'+icbc_model.lower()
         if exp_name is None:
             wrf_nml_tmp = 'namelist.input.' + icbc_model.lower()
+            if icbc_model in variants_hrrr:
+                # If using HRRR, check if namelist.input.hrrr.hybr or namelist.input.hrrr.pres exists.
+                # If not, then use namelist.input.hrrr if that exists, to not require users have separate templates.
+                # If using native-grid files, num_metgrid_levels = 51.
+                # If using pressure-level files, num_metgrid_levels = 41 and ptop_requested = 5000 or larger.
+                # It is the responsibility of the user to configure their namelist templates properly, as there are
+                # so many user-configured settings that can easily go awry and cause errors at various stages.
+                # Checking for all of them would make this set of scripts much more complex and vulnerable to version
+                # changes in WPS or WRF as some namelist options are added or removed with version changes.
+                if hrrr_native:
+                    wrf_nml_tmp_hrrr = 'namelist.input.hrrr.hybr'
+                else:
+                    wrf_nml_tmp_hrrr = 'namelist.input.hrrr.pres'
+                if template_dir.joinpath(wrf_nml_tmp_hrrr).exists():
+                    wrf_nml_tmp = wrf_nml_tmp_hrrr
         else:
+            # If creating ensemble members or experiments, assume the user is creating namelist templates properly.
+            # Don't bother looking for .hybr or .pres suffixes or anything like that.
+            # If using experiments driven by different models for ICs/LBCs, name templates carefully (e.g.,
+            # namelist.input.hrrr.mem01, namelist.input.gfs.mem02, etc.) & run workflow separately for each icbc_model.
             wrf_nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'+exp_name
+
+        # Add some error-checking for the existence of the expected WPS & WRF namelist templates
+        if not template_dir.joinpath(wps_nml_tmp).exists():
+            log.error('ERROR: Expected WPS namelist template file ' + str(
+                template_dir.joinpath(wps_nml_tmp)) + ' does not exist.')
+            log.error('Exiting!')
+            sys.exit(1)
+        if not template_dir.joinpath(wrf_nml_tmp).exists():
+            log.error('ERROR: Expected WRF namelist template file ' + str(
+                template_dir.joinpath(wrf_nml_tmp)) + ' does not exist.')
+            log.error('Exiting!')
+            sys.exit(1)
 
         ## Get the icbc model cycle
         ## In real-time applications there may need to be an offset to stay ahead of the clock
