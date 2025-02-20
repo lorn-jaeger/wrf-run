@@ -42,6 +42,7 @@ def parse_args():
      'archive': 'flag to archive wrfout, wrfinput, wrfbdy, and namelist files to another location',
      'icbc_model': 'string specifying the model to be used for ICs/LBCs (default: GEFS)',
      'icbc_source': 'string specifying the repository from which to obtain ICs/LBCs (GLADE, AWS, GoogleCloud, NOMADS) (default: GLADE)',
+     'icbc_analysis': 'flag to use analysis [f00] files for ICs/LBCs instead of forecasts from a single cycle (default: False)',
      'hrrr_native': 'flag to download HRRR native-grid atmospheric data for ICs/LBCs (default: True)',
      'grib_dir': 'string or Path object specifying the parent directory for where grib/grib2 input data (e.g., GEFS, GFS, etc.) is downloaded for use by ungrib (default: /glade/derecho/scratch/jaredlee/data',
      'ungrib_domain': 'string (either "full" or "subset") indicating whether to run ungrib on full-domain or geographically-subsetted grib/grib2 files (default: full)',
@@ -110,6 +111,7 @@ def parse_args():
     params.setdefault('ungrib_domain', 'full')
     params.setdefault('icbc_model', 'GFS')
     params.setdefault('icbc_source', 'GLADE')
+    params.setdefault('icbc_analysis', False)
     params.setdefault('hrrr_native', True)
     params.setdefault('grib_dir', '/glade/derecho/scratch/jaredlee/data')
     params.setdefault('wps_ins_dir', '/glade/u/home/jaredlee/programs/WPS-4.6-dmpar')
@@ -136,6 +138,7 @@ def parse_args():
     params['icbc_source'] = params['icbc_source']
     params['icbc_model'] = params['icbc_model']
     params['icbc_fc_dt'] = params['icbc_fc_dt']
+    params['icbc_analysis'] = params['icbc_analysis']
     params['ungrib_domain'] = params['ungrib_domain']
     params['wps_ins_dir'] = pathlib.Path(params['wps_ins_dir'])
     params['wrf_ins_dir'] = pathlib.Path(params['wrf_ins_dir'])
@@ -165,7 +168,7 @@ def parse_args():
     return params
 
 def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, exp_name, realtime, archive, hostname,
-         now_time_beg, icbc_model, icbc_source, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir, hrrr_native,
+         icbc_model, icbc_source, icbc_analysis, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir, hrrr_native,
          wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
          upp_working_dir, upp_yaml, upp_domains,
          get_icbc, do_geogrid, do_ungrib, do_metgrid, do_real, do_wrf, do_upp):
@@ -191,6 +194,12 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
     cycle_dt_end = pd.to_datetime(cycle_dt_str_end, format=fmt_yyyymmdd_hh)
     cycle_dt_all = pd.date_range(start=cycle_dt_beg, end=cycle_dt_end, freq=str(cycle_int_h)+'h')
     n_cycles = len(cycle_dt_all)
+
+    if icbc_analysis and icbc_fc_dt != 0:
+        log.error('ERROR: icbc_analysis = True and icbc_fc_dt = ' + str(icbc_fc_dt) + '. Incompatible options.')
+        log.error('If icbc_analysis = True is desired, then set icbc_fc_dt = 0 and re-run the workflow.')
+        log.error('Exiting!')
+        sys.exit(1)
 
     ## Check if this cluster uses slurm or pbs
     test = subprocess.run(['which','sbatch'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -288,28 +297,22 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         # Model directory structure & naming conventions to mimic AWS, rather than GLADE or GoogleCloud
         if icbc_model in variants_gefs:
             # Full-domain grib directory
-#            grib_dir_full = grib_dir_parent.joinpath('gefs',icbc_cycle_yyyymmdd_hh,exp_name)
             grib_dir_full = grib_dir_parent.joinpath(f'gefs.{icbc_cycle_yyyymmdd}',icbc_cycle_hr,'atmos')
-
             # Use subset GEFS
             grib_dir_subset = grib_dir_parent.joinpath(f'gefs.{icbc_cycle_yyyymmdd}.subset',icbc_cycle_hr,'atmos')
         elif icbc_model in variants_gfs:
             # Full-domain grib directory
-#            grib_dir_full = grib_dir_parent.joinpath('gfs',icbc_cycle_yyyymmdd_hh)
             grib_dir_full = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}',icbc_cycle_hr,'atmos')
-
             # Subsetted-domain grib directory
             grib_dir_subset = grib_dir_parent.joinpath(f'gfs.{icbc_cycle_yyyymmdd}.subset',icbc_cycle_hr,'atmos')
         elif icbc_model in variants_gfs_fnl:
             # Full-domain grib directory
             grib_dir_full = grib_dir_parent.joinpath(f'gfs_fnl.{icbc_cycle_yyyymmdd}', icbc_cycle_hr)
-
             # Subsetted-domain grib directory
             grib_dir_subset = grib_dir_parent.joinpath(f'gfs_fnl.{icbc_cycle_yyyymmdd}.subset', icbc_cycle_hr)
         elif icbc_model in variants_hrrr:
             # Full-domain grib directory
             grib_dir_full = grib_dir_parent.joinpath(f'hrrr.{icbc_cycle_yyyymmdd}', icbc_cycle_hr)
-
             # Subsetted-domain grib directory
             grib_dir_subset = grib_dir_parent.joinpath(f'hrrr.{icbc_cycle_yyyymmdd}.subset', icbc_cycle_hr)
         else:
@@ -355,6 +358,10 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                     int_hrs = int_sec // 3600
                     break
 
+        # Build the array of valid times for this simulation (most needed for icbc_analysis=True)
+        valid_dt_all = pd.date_range(start=beg_dt, end=end_dt, freq=str(int_hrs) + 'h')
+        n_valid = len(valid_dt_all)
+
         if icbc_model in variants_gefs:
             if exp_name is None:
                 log.error('ERROR! exp_name is None, so a GEFS member number cannot be extracted. Exiting!')
@@ -378,6 +385,12 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         if get_icbc:
             # If an ICBC dataset is locally available on GLADE, use that instead of downloading from an external repo
             if icbc_model in variants_gfs:
+                if icbc_analysis:
+                    log.error('ERROR: icbc_analysis = True with icbc_model = GFS is currently not supported.')
+                    log.error('Use icbc_model = GFS_FNL instead if analysis ICs/LBCs are desired with GFS.')
+                    log.error('Exiting!')
+                    sys.exit(1)
+
                 if icbc_source in variants_glade:
                     script_name = 'link_gfs_from_glade.py'
                 elif icbc_source in variants_aws:
@@ -391,12 +404,16 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
             elif icbc_model in variants_gfs_fnl:
                 if icbc_source in variants_glade:
                     cmd_list = ['python', 'link_gfs_fnl_from_glade.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                         '-i', str(int_hrs), '-o', grib_dir_full]
+                         '-i', str(int_hrs), '-o', grib_dir_parent]
                 else:
                     log.error('ERROR: No option yet to download GFS_FNL data from icbc_source=' + icbc_source +' in setup_wps_wrf.py.')
                     log.error('Exiting!')
                     sys.exit(1)
             elif icbc_model in variants_gefs:
+                if icbc_analysis:
+                    log.error('ERROR: icbc_analysis = True with icbc_model = GEFS is currently not supported.')
+                    log.error('Exiting!')
+                    sys.exit(1)
                 if icbc_source in variants_glade:
                     log.error('ERROR: There is no known dataset containing GEFS files on GLADE. Change icbc_source.')
                     log.error('Exiting!')
@@ -415,9 +432,11 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                     sys.exit(1)
                 elif icbc_source in variants_gc or icbc_source in variants_aws:
                     cmd_list = ['python', 'download_hrrr_from_aws_or_gc.py', '-b', icbc_cycle_str, '-s', str(sim_hrs),
-                            '-i', str(int_hrs), '-o', grib_dir_full, '-f', str(icbc_fc_dt), '-c', icbc_source]
+                            '-i', str(int_hrs), '-o', grib_dir_parent, '-f', str(icbc_fc_dt), '-c', icbc_source]
                     if hrrr_native:
                         cmd_list.append('-n')
+                    if icbc_analysis:
+                        cmd_list.append('-a')
                 else:
                     log.error('ERROR: No option yet to download or link to HRRR data from icbc_source=' + icbc_source + ' in setup_wps_wrf.py.')
                     log.error('Exiting!')
@@ -437,12 +456,25 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
         if do_ungrib:
             cmd_list = ['python', 'run_ungrib.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
-                        '-r', wps_run_dir, '-o', ungrib_dir, '-g', grib_dir, '-t', template_dir, '-m', icbc_model,
+                        '-r', wps_run_dir, '-o', ungrib_dir, '-t', template_dir, '-m', icbc_model,
                         '-i', str(int_hrs), '-q', scheduler, '-f', str(icbc_fc_dt), '-a', hostname, '-c', icbc_source]
+
+            # For some IC/LBC models the gribfiles are stored in date directories, not cycle hour directories
+            # So pass in grib_dir_parent instead. run_ungrib.py handles grib_dir for these models differently.
+            if icbc_model in variants_gfs_fnl or icbc_model in variants_hrrr:
+                cmd_list.append('-g')
+                cmd_list.append(grib_dir_parent)
+            else:
+                cmd_list.append('-g')
+                cmd_list.append(grib_dir)
+
+            if icbc_model in variants_hrrr and icbc_analysis:
+                cmd_list.append('-l')
             if hrrr_native:
                 cmd_list.append('-v')
             if mem_id is not None:
-                cmd_list.append(['-n', mem_id])
+                cmd_list.append('-n')
+                cmd_list.append(mem_id)
             ret, output = exec_command(cmd_list, log)
 
         if do_metgrid:
@@ -458,7 +490,8 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                      '-r', wrf_run_dir, '-m', metgrid_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp,
                      '-q', scheduler, '-a', hostname]
             if exp_name is not None:
-                cmd_list.append(['-x', exp_name])
+                cmd_list.append('-x')
+                cmd_list.append(exp_name)
             ret, output = exec_command(cmd_list, log)
 
         if do_wrf:
@@ -466,7 +499,8 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                         '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-m',
                         '-q', scheduler, '-a', hostname]
             if exp_name is not None:
-                cmd_list.append(['-x', exp_name])
+                cmd_list.append('-x')
+                cmd_list.append(exp_name)
             if do_upp or archive:
                 cmd_list.append('-m')
             ret, output = exec_command(cmd_list, log)
@@ -474,11 +508,13 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
         if do_upp:
             cmd_list = ['python', 'run_upp.py', '-b', cycle_str, '-r', wrf_run_dir, '-c', upp_yaml, '-N']
             if exp_name is not None:
-                cmd_list.append(['-x', exp_name])
+                cmd_list.append('-x')
+                cmd_list.append(exp_name)
             if upp_domains and len(upp_domains) > 0 and upp_domains[0] > 0:
                 domains_str = str(upp_domains).strip().replace('[', '').replace(']', '').replace(' ', '')
                 log.info(f'Sending domains_str to run_upp: {domains_str}')
-                cmd_list.append(['-d', str(domains_str)])
+                cmd_list.append('-d')
+                cmd_list.append(str(domains_str))
             ret, output = exec_command(cmd_list, log)
 
             # # TODO: Take this out after testing
@@ -530,7 +566,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
     params = parse_args()
-    params['now_time_beg'] = now_time_beg
+    # params['now_time_beg'] = now_time_beg
     main(**params)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
