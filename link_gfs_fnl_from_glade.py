@@ -36,15 +36,15 @@ def parse_args():
                         help='WRF cycle start date/time [YYYYMMDD_HH] (default: 20220801_00)')
     parser.add_argument('-s', '--sim_hrs', default=48, type=int,
                         help='integer number of forecast hours to download (default: 48)')
-    parser.add_argument('-o', '--out_dir', default=None,
-                        help='string or pathlib.Path object of the local directory where all downloaded GFS FNL data should be stored')
+    parser.add_argument('-o', '--out_dir_parent', default=None,
+                        help='string or pathlib.Path object of the local parent directory where all downloaded GFS FNL data should be stored')
     parser.add_argument('-i', '--int_h', default=6, type=int,
                         help='integer number of hours between GFS FNL files to download (default: 6)')
 
     args = parser.parse_args()
     cycle_dt = args.cycle_dt
     sim_hrs = args.sim_hrs
-    out_dir = args.out_dir
+    out_dir_parent = args.out_dir_parent
     int_h = args.int_h
 
     if len(cycle_dt) != 11:
@@ -56,16 +56,15 @@ def parse_args():
         parser.print_help()
         sys.exit(1)
 
-    if out_dir is None:
-        ## Make a default assumption about where to put the files
-        out_dir = pathlib.Path('/', 'glade', 'derecho', 'scratch', 'jaredlee', 'data', 'gfs_fnl', cycle_dt)
-        log.info('Using the default assumption for out_dir: ' + str(out_dir))
+    if out_dir_parent is None:
+        log.error('ERROR: out_dir_parent not specified. Exiting!')
+        sys.exit(1)
     else:
-        out_dir = pathlib.Path(out_dir)
+        out_dir_parent = pathlib.Path(out_dir_parent)
 
-    return cycle_dt, sim_hrs, out_dir, int_h
+    return cycle_dt, sim_hrs, out_dir_parent, int_h
 
-def main(cycle_dt_str, sim_hrs, out_dir, now_time_beg, interval):
+def main(cycle_dt_str, sim_hrs, out_dir_parent, now_time_beg, interval):
     log.info(f'Running link_gfs_from_glade.py from directory: {curr_dir}')
 
     # Calculate the desired lead hours for this cycle, accounting for the possible icbc_fc_dt offset.
@@ -106,13 +105,16 @@ def main(cycle_dt_str, sim_hrs, out_dir, now_time_beg, interval):
     glade_dir_parent = pathlib.Path('/', 'glade', 'campaign', 'collections', 'rda', 'data', 'd083003')
     # glade_dir = glade_dir_parent.joinpath(cycle_year, cycle_date)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    os.chdir(out_dir)
-
     # Loop over valid times
     for vv in range(n_valid):
         this_valid = valid_dt[vv]
+        this_date = this_valid.strftime(fmt_yyyymmdd)
         this_hh = this_valid.strftime(fmt_hh)
+
+        # Download GFS FNL files into date-specific directories
+        out_dir = out_dir_parent.joinpath('gfs_fnl.' + this_date)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(out_dir)
 
         # Always grab either the f00 or f03 files for GFS FNL
         if this_hh in ['00', '06', '12', '18']:
@@ -153,8 +155,8 @@ def main(cycle_dt_str, sim_hrs, out_dir, now_time_beg, interval):
 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
-    cycle_dt, sim_hrs, out_dir, int_h = parse_args()
-    main(cycle_dt, sim_hrs, out_dir, now_time_beg, int_h)
+    cycle_dt, sim_hrs, out_dir_parent, int_h = parse_args()
+    main(cycle_dt, sim_hrs, out_dir_parent, now_time_beg, int_h)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
