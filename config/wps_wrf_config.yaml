@@ -1,4 +1,4 @@
-sim_hrs: 6
+sim_hrs: 24
 template_dir: /glade/work/jaredlee/workflow/templates
 wps_ins_dir: /glade/u/home/jaredlee/programs/WPS-4.6-dmpar-casper
 wrf_ins_dir: /glade/u/home/jaredlee/programs/WRF-4.6
@@ -9,6 +9,7 @@ ungrib_domain: full
 icbc_model: HRRR
 icbc_source: AWS
 icbc_fc_dt: 0
+icbc_analysis: True
 hrrr_native: True
 get_icbc: True
 do_geogrid: False

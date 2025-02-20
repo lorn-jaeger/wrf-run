@@ -53,6 +53,8 @@ def parse_args():
     parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
     parser.add_argument('-v', '--hrrr_native', action='store_true',
                         help='If flag present, then ungrib HRRR native-grid data for atmospheric variables and pressure-level data for soil variables, otherwise only ungrib HRRR pressure-level data for all variables')
+    parser.add_argument('-l', '--icbc_analysis', action='store_true',
+                        help='If flag present, use analysis [f00] files for ICs/LBCs')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -65,6 +67,7 @@ def parse_args():
     icbc_source = args.icbc_source
     icbc_model = args.icbc_model
     icbc_fc_dt = args.icbc_fc_dt
+    icbc_analysis = args.icbc_analysis
     int_hrs = args.int_hrs
     scheduler = args.scheduler
     mem_id = args.mem_id
@@ -107,13 +110,15 @@ def parse_args():
         sys.exit(1)
 
     return (cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs,
-            icbc_fc_dt, scheduler, mem_id, hostname, hrrr_native)
+            icbc_fc_dt, scheduler, mem_id, hostname, hrrr_native, icbc_analysis)
 
 def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs,
-         icbc_fc_dt, scheduler, mem_id, hostname, hrrr_native):
+         icbc_fc_dt, scheduler, mem_id, hostname, hrrr_native, icbc_analysis):
 
     log.info(f'Running run_ungrib.py from directory: {curr_dir}')
 
+    fmt_hh = '%H'
+    fmt_yyyymmdd = '%Y%m%d'
     fmt_yyyymmddhh = '%Y%m%d%H'
     fmt_yyyymmdd_hh = '%Y%m%d_%H'
     fmt_yyyymmdd_hhmm = '%Y%m%d_%H%M'
@@ -125,6 +130,9 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     variants_gfs_fnl = ['GFS_FNL', 'gfs_fnl']
     variants_gefs = ['GEFS', 'gfs']
     variants_hrrr = ['HRRR', 'hrrr']
+
+    if icbc_model in variants_hrrr or icbc_model in variants_gfs_fnl:
+        grib_dir_parent = grib_dir
 
     # Any custom grib Vtables (i.e., not part of the WPS distribution) should be stored as part of this repo
     vtable_dir = pathlib.Path(curr_dir).joinpath('custom_vtables')
@@ -157,12 +165,22 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
     ## Loop over times
     for tt in range(n_times):
         this_dt = all_dt[tt]
+        this_dt_hh = this_dt.strftime(fmt_hh)
         this_dt_wrf_str = this_dt.strftime(fmt_wrf_dt)
+        this_dt_yyyymmdd = this_dt.strftime(fmt_yyyymmdd)
         this_dt_yyyymmddhh = this_dt.strftime(fmt_yyyymmddhh)
         this_dt_wrf_date_hh = this_dt.strftime(fmt_wrf_date_hh)
         this_dt_yyyymmdd_hh = this_dt.strftime(fmt_yyyymmdd_hh)
         this_dt_yyyymmdd_hhmm = this_dt.strftime(fmt_yyyymmdd_hhmm)
         log.info('Processing date '+this_dt_yyyymmdd_hh)
+
+        # For some IC/LBC models, gribfiles are stored in directories by date rather than cycle hour
+        # For these, treat grib_dir like grib_dir_parent instead
+        if icbc_model in variants_gfs_fnl:
+            grib_dir = grib_dir_parent.joinpath('gfs_fnl.' + this_dt_yyyymmdd)
+        elif icbc_model in variants_hrrr:
+            # Assume conus for now, but maybe someday allow for selection of other HRRR domains if the need arises
+            grib_dir = grib_dir_parent.joinpath('hrrr.' + this_dt_yyyymmdd, 'conus')
 
         ## Calculate the lead hour for this cycle, accounting for the possible icbc_fc_dt offset
         lead_h = int((this_dt - cycle_dt).total_seconds() // 3600) + icbc_fc_dt
@@ -228,14 +246,20 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             pathlib.Path('Vtable').symlink_to(wps_dir.joinpath('ungrib', 'Variable_Tables', 'Vtable.GFS'))
             if icbc_source in variants_glade:
                 # Leverage the fact that GFS FNL files on GLADE are 3-hourly, with new cycles every 6 h
-                if this_dt_yyyymmddhh[8:10] in ['00', '06', '12', '18']:
-                    file_pattern = str(grib_dir) + '/gdas1.fnl0p25.' + this_dt_yyyymmddhh + '.f00.grib2'
-                elif this_dt_yyyymmddhh[8:10] in ['03', '09', '15', '21']:
-                    file_pattern = str(grib_dir) + '/gdas1.fnl0p25.' + this_dt_yyyymmddhh + '.f03.grib2'
+                # Always grab either the f00 or f03 files for GFS FNL
+                if this_dt_hh in ['00', '06', '12', '18']:
+                    this_lead = '00'
+                    this_cycle = this_dt
+                elif this_dt_hh in ['03', '09', '15', '21']:
+                    this_lead = '03'
+                    this_cycle = this_dt - dt.timedelta(hours=3)
                 else:
-                    log.error('ERROR: this_dt_yyyymmddhh = ' + this_dt_yyyymmddhh + ', which means no GFS FNL file exists for this time.')
+                    log.error('ERROR: this_dt_yyyymmddhh = ' + str(this_dt_yyyymmddhh))
+                    log.error('This is invalid with icbc_model = GFS_FNL.')
                     log.error('Exiting!')
                     sys.exit(1)
+                gfs_fnl_cycle = this_cycle.strftime(fmt_yyyymmddhh)
+                file_pattern = str(grib_dir) + '/gdas1.fnl0p25.' + gfs_fnl_cycle + '.f' +this_lead + '.grib2'
             else:
                 log.error('ERROR: No option yet for icbc_source=' + icbc_source + ' for GFS_FNL in run_ungrib.py.')
                 log.error('Exiting!')
@@ -248,11 +272,17 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         elif icbc_model in variants_hrrr:
             if hrrr_native:
                 # Process native-grid HRRR output first, for atmospheric variables only (wrfnat files don't have soil)
-                file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfnatf' + lead_h_str2 + '.grib2'
+                if not icbc_analysis:
+                    file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfnatf' + lead_h_str2 + '.grib2'
+                else:
+                    file_pattern = str(grib_dir) + '/hrrr.t' + this_hh + 'z.wrfnatf00.grib2'
                 pathlib.Path('Vtable').symlink_to(vtable_dir.joinpath('Vtable.raphrrr.hybr'))
             else:
                 # Process pressure-grid HRRR output only, for both atmospheric & soil variables
-                file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+                if not icbc_analysis:
+                    file_pattern = str(grib_dir) + '/hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+                else:
+                    file_pattern = str(grib_dir) + '/hrrr.t' + this_hh + 'z.wrfprsf00.grib2'
                 pathlib.Path('Vtable').symlink_to(vtable_dir.joinpath('Vtable.raphrrr.pres'))
             shutil.copy(temp_dir.joinpath('namelist.wps.hrrr'), 'namelist.wps.template')
         else:
@@ -418,11 +448,18 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         ## Loop over times
         for tt in range(n_times):
             this_dt = all_dt[tt]
+            this_hh = this_dt.strftime(fmt_hh)
+            this_dt_yyyymmdd = this_dt.strftime(fmt_yyyymmdd)
             this_dt_wrf_str = this_dt.strftime(fmt_wrf_dt)
             this_dt_wrf_date_hh = this_dt.strftime(fmt_wrf_date_hh)
             this_dt_yyyymmdd_hh = this_dt.strftime(fmt_yyyymmdd_hh)
             this_dt_yyyymmdd_hhmm = this_dt.strftime(fmt_yyyymmdd_hhmm)
             log.info('Processing date '+this_dt_yyyymmdd_hh)
+
+            # For some IC/LBC models, gribfiles are stored in directories by date rather than cycle hour
+            # For these, treat grib_dir like grib_dir_parent instead
+            if icbc_model in variants_hrrr:
+                grib_dir = grib_dir_parent.joinpath('hrrr.' + this_dt_yyyymmdd, 'conus')
 
             ## Calculate the lead hour for this cycle, accounting for the possible icbc_fc_dt offset
             lead_h = int((this_dt - cycle_dt).total_seconds() // 3600) + icbc_fc_dt
@@ -476,7 +513,10 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                     log.error('Exiting!')
                     sys.exit(1)
                 pathlib.Path('Vtable').symlink_to(vtable_soil)
-                file_pattern = 'hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+                if not icbc_analysis:
+                    file_pattern = 'hrrr.t' + icbc_cycle_hr + 'z.wrfprsf' + lead_h_str2 + '.grib2'
+                else:
+                    file_pattern = 'hrrr.t' + this_hh + 'z.wrfprsf00.grib2'
                 shutil.copy(temp_dir.joinpath('namelist.wps.hrrr'), 'namelist.wps.template')
             else:
                 log.error('ERROR: Unknown icbc_model option in the second ungrib loop in run_ungrib.py.')
@@ -606,9 +646,9 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
     (cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt,
-     scheduler, mem_id, hostname, hrrr_native) = parse_args()
+     scheduler, mem_id, hostname, hrrr_native, icbc_analysis) = parse_args()
     main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, icbc_source, icbc_model, int_hrs, icbc_fc_dt,
-         scheduler, mem_id, hostname, hrrr_native)
+         scheduler, mem_id, hostname, hrrr_native, icbc_analysis)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
