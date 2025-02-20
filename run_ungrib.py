@@ -175,15 +175,16 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
         this_dt_yyyymmdd_hhmm = this_dt.strftime(fmt_yyyymmdd_hhmm)
         log.info('Processing date '+this_dt_yyyymmdd_hh)
 
-        # For some IC/LBC models, gribfiles are stored in directories by date rather than cycle hour
-        # For these, treat grib_dir like grib_dir_parent instead
+        # For some IC/LBC models, gribfiles are stored in directories by cycle date rather than cycle hour
         if icbc_model in variants_gfs_fnl:
             grib_dir = grib_dir_parent.joinpath('gfs_fnl.' + this_dt_yyyymmdd)
         elif icbc_model in variants_hrrr:
             # Assume conus for now, but maybe someday allow for selection of other HRRR domains if the need arises
             if icbc_analysis:
+                # All icbc files come from different HRRR model cycles (f00 each cycle) 
                 grib_dir = grib_dir_parent.joinpath('hrrr.' + this_dt_yyyymmdd, 'conus')
             else:
+                # All icbc files come from a single HRRR model cycle
                 grib_dir = grib_dir_parent.joinpath('hrrr.' + icbc_cycle_date, 'conus')
 
         ## Calculate the lead hour for this cycle, accounting for the possible icbc_fc_dt offset
@@ -461,11 +462,12 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
             log.info('Processing date '+this_dt_yyyymmdd_hh)
 
             # For some IC/LBC models, gribfiles are stored in directories by date rather than cycle hour
-            # For these, treat grib_dir like grib_dir_parent instead
             if icbc_model in variants_hrrr:
                 if icbc_analysis:
+                    # All icbc files come from different HRRR model cycles (f00 each cycle)
                     grib_dir = grib_dir_parent.joinpath('hrrr.' + this_dt_yyyymmdd, 'conus')
                 else:
+                    # All icbc files come from a single HRRR model cycle
                     grib_dir = grib_dir_parent.joinpath('hrrr.' + icbc_cycle_date, 'conus')
 
             ## Calculate the lead hour for this cycle, accounting for the possible icbc_fc_dt offset
