@@ -58,6 +58,8 @@ def parse_args():
      'get_icbc':    'flag to download/link to IC/BC grib data',
      'do_geogrid':  'flag to run geogrid for this case',
      'do_ungrib':   'flag to run ungrib for this case',
+     'do_avg_tsfc': 'flag to run avg_tsfc for this case (for improved lake SSTs)',
+     'use_tavgsfc': 'flag to use an already-existing TAVGSFC file for this case (for improved lake SSTs)',
      'do_metgrid':  'flag to run metgrid for this case',
      'do_real':     'flag to run real for this case',
      'do_wrf':      'flag to submit wrf for this case',
@@ -127,6 +129,8 @@ def parse_args():
     params.setdefault('get_icbc', False)
     params.setdefault('do_geogrid', False)
     params.setdefault('do_ungrib', False)
+    params.setdefault('do_avg_tsfc', False)
+    params.setdefault('use_tavgsfc', False)
     params.setdefault('do_metgrid', False)
     params.setdefault('do_real', False)
     params.setdefault('do_wrf', False)
@@ -171,7 +175,7 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
          icbc_model, icbc_source, icbc_analysis, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir, hrrr_native,
          wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
          upp_working_dir, upp_yaml, upp_domains,
-         get_icbc, do_geogrid, do_ungrib, do_metgrid, do_real, do_wrf, do_upp):
+         get_icbc, do_geogrid, do_ungrib, do_avg_tsfc, use_tavgsfc, do_metgrid, do_real, do_wrf, do_upp):
 
     ## String format statements
     fmt_exp_dir        = '%Y-%m-%d_%H'
@@ -477,12 +481,23 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
                 cmd_list.append(mem_id)
             ret, output = exec_command(cmd_list, log)
 
+        if do_avg_tsfc:
+            cmd_list = ['python', 'run_avg_tsfc.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
+                        '-r', wps_run_dir, '-u', ungrib_dir, '-t', template_dir, '-m', icbc_model]
+            if hrrr_native:
+                cmd_list.append('-v')
+            ret, output = exec_command(cmd_list, log)
+            # If we just ran avg_tsfc.exe, then we'll want to use TAVGSFC when running metgrid
+            use_tavgsfc = True
+
         if do_metgrid:
             cmd_list = ['python', 'run_metgrid.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wps_ins_dir,
                         '-r', wps_run_dir, '-o', metgrid_dir, '-u', ungrib_dir, '-t', template_dir, '-m', icbc_model,
                         '-q', scheduler, '-a', hostname]
             if hrrr_native:
                 cmd_list.append('-v')
+            if use_tavgsfc:
+                cmd_list.append('-g')
             ret, output = exec_command(cmd_list, log)
 
         if do_real:

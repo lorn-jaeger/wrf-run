@@ -49,6 +49,8 @@ def parse_args():
     parser.add_argument('-a', '--hostname', default='derecho', help='string specifying the hostname (default: derecho')
     parser.add_argument('-v', '--hrrr_native', action='store_true',
                         help='If flag present, then use HRRR native-grid data for atmospheric variables and pressure-level data for soil variables, otherwise only use HRRR pressure-level data for all variables')
+    parser.add_argument('-g', '--use_tavgsfc', action='store_true',
+                        help='If flag present, then ensure metgrid uses TAVGSFC file from avg_tsfc.exe utility')
 
     args = parser.parse_args()
     cycle_dt_beg = args.cycle_dt_beg
@@ -63,6 +65,7 @@ def parse_args():
     scheduler = args.scheduler
     hostname = args.hostname
     hrrr_native = args.hrrr_native
+    use_tavgsfc = args.use_tavgsfc
 
     if len(cycle_dt_beg) != 11 or cycle_dt_beg[8] != '_':
         log.error('ERROR! Incorrect format for argument cycle_dt_beg in call to run_metgrid.py. Exiting!')
@@ -104,10 +107,10 @@ def parse_args():
         nml_tmp = 'namelist.wps.'+icbc_model.lower()
 
     return (cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler,
-            hostname, hrrr_native)
+            hostname, hrrr_native, use_tavgsfc)
 
 def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, icbc_model, nml_tmp, scheduler,
-         hostname, hrrr_native):
+         hostname, hrrr_native, use_tavgsfc):
 
     log.info(f'Running run_metgrid.py from directory: {curr_dir}')
 
@@ -140,6 +143,14 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
         pathlib.Path('metgrid.exe').unlink()
     pathlib.Path('metgrid.exe').symlink_to(wps_dir.joinpath('metgrid.exe'))
 
+    # Does TAVGSFC file exist? It needs to be there already if we intend to use it
+    if use_tavgsfc:
+        tavgsfc_file = run_dir.joinpath('TAVGSFC')
+        if not tavgsfc_file.exists():
+            log.error('ERROR! TAVGSFC file not found. Set do_avg_tsfc = True and rerun the workflow.')
+            log.error('Exiting!')
+            sys.exit(1)
+
     ## Copy over the metgrid batch script
     # Add special handling for derecho & casper, since peer scheduling is possible
     if hostname == 'derecho':
@@ -151,6 +162,14 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
 
     ## Copy over the default namelist
     shutil.copy(tmp_dir.joinpath(nml_tmp), 'namelist.wps.template')
+
+    # First, open the namelist template and find if a line starts with constants_name
+    # If it's not found, then we know we need to add it when we modify the namelist
+    constants_name = False
+    with open('namelist.wps.template', 'r') as in_file:
+        for num, line in enumerate(in_file):
+            if 'constants_name' in line:
+                constants_name = True
 
     ## Modify the namelist for this date and simulation length (only d01 needs to go the full length)
     with open('namelist.wps.template', 'r') as in_file, open('namelist.wps', 'w') as out_file:
@@ -178,6 +197,18 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
                     out_file.write(" fg_name = '" + str(ungrib_dir) + "/FILE',\n")
             elif line.strip()[0:28] == 'opt_output_from_metgrid_path':
                 out_file.write(" opt_output_from_metgrid_path = '"+str(out_dir)+"',\n")
+            elif line.strip()[0:8] == '&metgrid' and not constants_name:
+                # Add a new line in the &metgrid section since we know from before that constants_name is not present
+                newline = line + " constants_name = '" + str(run_dir) + "/TAVGSFC',\n"
+                out_file.write(newline)
+            elif line.strip()[0:14] == 'constants_name':
+                # Add TAVGSFC to the constants_name line if it isn't already included
+                index = line.find('TAVGSFC')
+                if index == -1:
+                    # Find the newline character, add TAVGSFC before it
+                    newline = line.split(sep='\n')[0]
+                    newline += "'TAVGSFC',\n"
+                out_file.write(newline)
             else:
                 out_file.write(line)
 
@@ -256,9 +287,9 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
 if __name__ == '__main__':
     now_time_beg = dt.datetime.now(dt.UTC)
     (cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname,
-     hrrr_native) = parse_args()
+     hrrr_native, use_tavgsfc) = parse_args()
     main(cycle_dt, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, tmp_dir, icbc_model, nml_tmp, scheduler, hostname,
-         hrrr_native)
+         hrrr_native, use_tavgsfc)
     now_time_end = dt.datetime.now(dt.UTC)
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
