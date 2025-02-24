@@ -14,6 +14,8 @@ hrrr_native: True
 get_icbc: True
 do_geogrid: False
 do_ungrib: True
+do_avg_tsfc: True
+use_tavgsfc: True
 do_metgrid: True
 do_real: True
 do_wrf: True
