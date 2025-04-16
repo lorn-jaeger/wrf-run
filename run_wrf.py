@@ -257,7 +257,7 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
                 else:
                     ## Loop through the rsl.error.* files to look for fatal errors
                     # May need to add other error message patterns to search for
-                    patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+                    patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:', 'unrecognized option']
                     rslerr = 'rsl.error.*'
                     for fname in glob.glob(rslerr):
                         for pattern in patterns:
@@ -289,7 +289,8 @@ if __name__ == '__main__':
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
-    log.info('run_wrf.py completed successfully.')
+    log.info('')
+    log.info(this_file + ' completed successfully.')
     log.info('Beg time: '+now_time_beg_str)
     log.info('End time: '+now_time_end_str)
     log.info('Run time: '+str(run_time_tot)+'\n')
