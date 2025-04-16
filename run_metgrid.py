@@ -208,7 +208,7 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
                     # Find the newline character, add TAVGSFC before it
                     newline = line.split(sep='\n')[0]
                     newline += "'TAVGSFC',\n"
-                out_file.write(newline)
+                    out_file.write(newline)
             else:
                 out_file.write(line)
 
@@ -271,7 +271,7 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, out_dir, ungrib_dir, tmp_dir, 
         else:
             # May need to add more error message patterns to search for
             fnames = ['metgrid.log.0000', job_log_filename, job_err_filename]
-            patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+            patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:', 'unrecognized option']
             for fname in fnames:
                 if run_dir.joinpath(fname).is_file():
                     for pattern in patterns:
@@ -294,7 +294,8 @@ if __name__ == '__main__':
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
-    log.info('run_metgrid.py completed successfully.')
+    log.info('')
+    log.info(this_file + ' completed successfully.')
     log.info('Beg time: '+now_time_beg_str)
     log.info('End time: '+now_time_end_str)
     log.info('Run time: '+str(run_time_tot)+'\n')

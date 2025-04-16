@@ -185,7 +185,10 @@ def main(cycle_dt_beg, sim_hrs, wps_dir, run_dir, ungrib_dir, tmp_dir, icbc_mode
                     # Find the newline character, add TAVGSFC before it
                     newline = line.split(sep='\n')[0]
                     newline += "'TAVGSFC',\n"
-                out_file.write(newline)
+                    out_file.write(newline)
+                else:
+                    # TAVGSFC is already in the line, don't need to modify it
+                    out_file.write(line)
             else:
                 out_file.write(line)
 
@@ -205,7 +208,8 @@ if __name__ == '__main__':
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
-    log.info('run_avg_tsfc.py completed successfully.')
+    log.info('')
+    log.info(this_file + ' completed successfully.')
     log.info('Beg time: '+now_time_beg_str)
     log.info('End time: '+now_time_end_str)
     log.info('Run time: '+str(run_time_tot)+'\n')

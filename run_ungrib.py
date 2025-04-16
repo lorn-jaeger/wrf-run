@@ -413,7 +413,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                 # May need to add more error message patterns to search for
                 fnames = ['ungrib.log', 'ungrib.e' + jobid_list[tt], 'ungrib.o' + jobid_list[tt],
                           'log_ungrib.e' + jobid_list[tt], 'log_ungrib.o' + jobid_list[tt]]
-                patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+                patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:', 'unrecognized option']
                 for fname in fnames:
                     if ungrib_dir.joinpath(fname).is_file():
                         for pattern in patterns:
@@ -631,7 +631,7 @@ def main(cycle_dt_str, sim_hrs, wps_dir, run_dir, out_dir, grib_dir, temp_dir, i
                     # Add other error message patterns to search for if needed
                     fnames = ['ungrib.log', 'ungrib.e' + jobid_list[tt], 'ungrib.o' + jobid_list[tt],
                               'log_ungrib.e' + jobid_list[tt], 'log_ungrib.o' + jobid_list[tt]]
-                    patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:']
+                    patterns = ['FATAL', 'Fatal', 'ERROR', 'Error', 'BAD TERMINATION', 'forrtl:', 'unrecognized option']
                     for fname in fnames:
                         if ungrib_dir.joinpath(fname).is_file():
                             for pattern in patterns:
@@ -662,7 +662,8 @@ if __name__ == '__main__':
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
-    log.info('run_ungrib.py completed successfully.')
+    log.info('')
+    log.info(this_file + ' completed successfully.')
     log.info('Beg time: '+now_time_beg_str)
     log.info('End time: '+now_time_end_str)
     log.info('Run time: '+str(run_time_tot)+'\n')

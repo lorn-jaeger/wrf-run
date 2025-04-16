@@ -127,7 +127,8 @@ if __name__ == '__main__':
     run_time_tot = now_time_end - now_time_beg
     now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
     now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
-    log.info('\nlink_gfs_from_glade.py completed successfully.')
+    log.info('')
+    log.info(this_file + ' completed successfully.')
     log.info('   Beg time: ' + now_time_beg_str)
     log.info('   End time: ' + now_time_end_str)
     log.info('   Run time: ' + str(run_time_tot) + '\n')
