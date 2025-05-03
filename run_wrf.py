@@ -198,6 +198,34 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, tmp_dir, icbc_model, exp_name,
             return success
             sys.exit(1)
 
+    # If the WRF namelist has a line "iofields_filename", look for the name(s) of that file(s)
+    # If that file(s) exists in the templates directory, then copy it/them over to the WRF run directory
+    is_iofields = False
+    with open('namelist.input') as nml:
+        for line in nml:
+            if line.strip()[0:17] == 'iofields_filename':
+                # If the user didn't add an ending comma, that might be a problem...
+                iofields_fnames = line.split('=')[1].strip().split(',')
+                is_iofields = True
+                break
+    if is_iofields:
+        # How many file names were listed?
+        n_io_files = len(iofields_fnames)
+        # Loop over the file(s)
+        for ff in range(n_io_files):
+            # Strip any spaces and get rid of any quotes around the file name that are the first/last character
+            io_fname = iofields_fnames[ff].strip()[1:-1]
+            # If this is blank or a newline, then we're at the end of the list.
+            if io_fname == '' or io_fname == '\n':
+                break
+            io_file = tmp_dir.joinpath(io_fname)
+            if io_file.is_file():
+                ret, output = exec_command(['cp', io_file, '.'], log, False, False)
+            else:
+                log.warning(f'WARNING: WRF namelist expects to find {io_fname} to control WRF variable I/O.')
+                log.warning(f'         That file was not found in {tmp_dir},')
+                log.warning('         so cannot be copied to the run directory.')
+
     ## Clean up any rsl.out, rsl.error, and wrf log files
     files = glob.glob('rsl.*')
     for file in files:
