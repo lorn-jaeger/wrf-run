@@ -444,7 +444,7 @@ file.
      log files. A future update will clarify how to move on to the next WPS/WRF
      cycle after submitting WRF, without waiting to monitor the WRF job.
       
-Monitoring and Troublshooting
+Monitoring and Troubleshooting
 -----------------------------
 
 * **Log Locations**: Each step (:code:`geogrid/`, :code:`ungrib/`,
