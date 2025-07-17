@@ -7,7 +7,8 @@ Running the Workflow on NSF NCAR HPCs
 
 This section walks a new user through the end-to-end steps required to configure
 and execute the `WPS WRF Workflow <https://github.com/NCAR/wps_wrf_workflow>`_
-on NSF NCAR's Casper or Derecho HPC Systems. 
+on NSF NCAR's Casper or Derecho HPC Systems. This workflow should also work on
+any other HPC system that has either a PBS or Slurm queue scheduler.
 
 
 Prerequisites
@@ -19,7 +20,7 @@ Access and Permissions
 * Login credentials for Casper or Derecho (e.g., via
   :code:`ssh username@casper.hpc.ucar.edu`)
 
-* Valid PBS project/accoutn codes (e.g., :code:`#PBS -A NWS####`)
+* Valid PBS project/account codes (e.g., :code:`#PBS -A NWS####`)
 
 * Write permissions on scratch/project directories for workflow outputs
   and downloaded data
@@ -66,29 +67,32 @@ Main YAML Configuration
      namelists, job submission scripts, etc.
 
    * :code:`wps_ins_dir` and :code:`wrf_ins_dir`: Directories where WPS and
-     WRF are installed; defaults can remain if they are read accessible.
+     WRF are installed; defaults can remain if they are read-accessible.
+     (Default values: :code:`/glade/u/home/jaredlee/programs/WPS-4.6-dmpar`
+     and `/glade/u/home/jaredlee/programs/WRF-4.6`, respectively.)
 
      .. note::
 	
        Currently WPS needs to be compiled for :code:`dmpar` execution, not
        :code:`serial`, in order to speed up the WPS programs (and on NSF NCAR
-       HPCs, it needs to be compiled on Casper, not Derecho, while WRF needs
-       to be compiled on Derecho, not Casper).
+       HPCs, it should be compiled on Casper, not Derecho, while WRF should
+       be compiled on Derecho, not Casper).
 
    * :code:`wps_run_dir` and :code:`wrf_run_dir`: Scratch or project paths
-     that are write accessible. The workflow will create subdirectories
-     automatically.
+     that are write-accessible. The workflow will create subdirectories
+     automatically. NOTE: These must be updated from the defaults in the repo.
 
    * :code:`grib_dir`: Location to store downloaded HRRR GRIB2 files. This
-     location must be a path that is write accessible.
+     location must be a path that is write-accessible by the user.
 
-   * :code:`sim_hrs`: Total forecast length in hours (e.g., :code:`30`). This
-     value drives how many hours of ICBC and subsequent steps run.
+   * :code:`sim_hrs`: Total simulation length in hours (e.g., :code:`30`). This
+     value drives how most subsequent steps run. (Default value: :code:`24`.)
 
    * :code:`do_geogrid`: Set to :code:`True` to run geogrid; if
-     geogrid outputs are already available (e.g., from a colleague), set to :code:`False`:
-     and point :code:`opt_output_from_geogrid_path` in
-     :code:`namelist.wps` template(s) accordingly.
+     geogrid outputs are already available (e.g., from a colleague), set to :code:`False`.  
+     Ensure :code:`opt_output_from_geogrid_path` in
+     :code:`namelist.wps` template(s) points to correct geogrid output location.
+     (Default value: :code:`False`.)
 
    * :code:`ungrib_domain`: :code:`full` ungribs the complete GRIB file domain
      (for HRRR this is CONUS, while for GFS and GEFS this is global). The option
@@ -96,59 +100,68 @@ Main YAML Configuration
      geographically subset GEFS output to some smaller domain to enable
      :code:`ungrib.exe` to run faster, which may be helpful in operational
      configurations (this optional setting could be added in the future for
-     GFS or other IC/LBC model sources, though).
+     GFS or other IC/LBC model sources, though). (Default value: :code:`full`.)
 
    * :code:`icbc_model` and :code:`icbc_source`:
 
-     * :code:`icbc_model`: e.g., :code:`hrrr`, :code:`gfs`, :code:`gfs-fnl`, or :code:`gefs`
+     * :code:`icbc_model`: e.g., :code:`hrrr`: :code:`gfs`: :code:`gfs-fnl`: :code:`gefs`:. 
+       The script is tolerant to all-lowercase or all-caps entries here. (Default value:
+       :code:`GFS`.)
 
      * :code:`icbc_source`: :code:`AWS` or :code:`GoogleCloud` to dowload from AWS or
        GoogleCloud HRRR repositories, or :code:`GLADE` to link to local RDA archive
-       files (available for :code:`gfs` and :code:`gfs-fnl` but not for :code:`hrrr`
-       or :code:`gefs`
+       files (GLADE/RDA respositories are available for :code:`gfs` and :code:`gfs-fnl`
+       but not for :code:`hrrr`: or :code:`gefs`:). Also note that :code:`icbc_source`
+       can tolerate all-caps or all-lowercase entries for both :code:`AWS` and
+       :code:`GoogleCloud`, in addition to camel-case for :code:`GoogleCloud`. (Default
+       value: :code:`GLADE`.)
 
    * :code:`icbc_analysis`: :code:`True` to initialize from the analysis (forecast
-     hour 0) only; :code:`False` would use forecast hours 0-N of a single cycle.
+     hour 0) files from successive IC/LBC model cycles (NOTE: this can only be done
+     retrospectively, and should provide the best-possible ICs/LBCs); :code:`False`: 
+     to initialize from forecast files from a single IC/LBC model cycle. (Default
+     value: :code:`False`.)
 
    * :code:`icbc_fc_dt`: Normally set to :code:`0`. If set to some other positive
-     integer N, then ICs/LBCs are obtained  from an N-hour old cycle of the
+     integer N, then ICs/LBCs are obtained from an N-hour old cycle of the
      :code:`icbc_model`. (That situation may be useful to stay ahead of the clock
-     in operational forecast systems.)
+     in operational forecast systems.) (Default value: :code:`0`.)
 
    * :code:`get_icbc`: :code:`True` to download or create symbolic links to model
      data to use as ICs/LBCs. If the specified files already exist locally where
-     expected, then nothing is re-downloaded or re-linked.
+     expected, then nothing is re-downloaded or re-linked. (Default value: :code:`False`.)
 
    * :code:`hrrr_native`: :code:`True` to download the HRRR native (hybrid)-level
      files for atmospheric variables and pressure-level files for soil variables
-     only (HRRR native-level files have more vertical levels (51) than
-     pressure-level files (4) but do not include soil variables). :code:`False`
+     only (HRRR native-level files have more vertical levels [51] than
+     pressure-level files [40] but do not include soil variables). :code:`False`
      to download only the HRRR pressure-level files for both atmospheric and
      soil variables. Has no effect if :code:`icbc_model` is set to something
-     other than :code:`hrrr`.
+     other than :code:`hrrr`. (Default value: :code:`True`.)
 
    * :code:`do_geogrid`, :code:`do_ungrib`, :code:`do_metgrid`, :code:`do_real`,
-     :code:`do_wrf`: Control each WPS/WRF step. Geogrid is a one-time doman setup;
+     :code:`do_wrf`: Control each WPS/WRF step. Geogrid is a one-time domain setup;
      Ungrib/Metgrid/Real need to be run for each WRF forecast cycle (and
      potentially also for different WRF configurations for the same WRF cycle,
-     depending on what is different).
+     depending on what is different). (Default values: :code:`False` for all.)
 
    * :code:`do_avg_tsfc`: If :code:`True`, runs a WPS utility (:code:`avg_tsfc.exe`)
      that calculates a 24-hour average surface temperature to better estimate
      lake-surface temps (avoiding interpolation from oceans, which can result in
      wildly inaccurate surface temperatures for inland lakes). This step is run
      after Ungrib but before Metgrid. If the output file (TAVGSFC) has already
-     been generated from a previous attempt to run the workflow for this WRF cycle /
-     experiment, then set this to :code:`FALSE` to save a few minutes.
+     been generated from a previous attempt to run the workflow for this WRF cycle/
+     experiment, then set this to :code:`False` to save a few minutes. (Default
+     value: :code:`False`.)
 
    * :code:`use_tavgsfc`: :code:`True` to use the output from the :code:`avg_tsfc.exe`
      utility (a file called TAVGSFC) in Metgrid. This will add the appropriate line
      to the :code:`&metgrid` section of :code:`namelist.wps` if it does not already
-     exist.
+     exist. (Default value: :code:`False`.)
 
    * :code:`archive`: When :code:`True`, the workflow automatically moves all output
      (namelists, wrfout*, logs) into an archival directory (set :code:`arc_dir` to a
-     write accessible directory) for easy retrieval.
+     write accessible directory) for easy retrieval. (Default value: :code:`False`.)
 
 All other fields can remain at their default values unless specialized
 cases arise.
@@ -161,41 +174,56 @@ Edit Template Files
 
    .. code-block::
 
-      cd ../templates/fasteddy.nm
+      cd ../templates/fasteddy_nm
 
 2. Update Account in Submit Scripts:
 
-   * Open each PBS script (:code:`submit_geogrid.bash.casper`, :code:`submit_ungrib.bash.casper`,
-     etc.) and change:
+   * Open each PBS script (e.g., :code:`submit_geogrid.bash.casper`, :code: `submit_ungrib.bash.casper`,
+     etc.) and specify the desired user account to charge for core hours:
    
-     .. code-block::
+   .. code-block::
 
-        #PBS -A <user_account_code>
+      #PBS -A <user_account_code>
+
+   * The user may also wish to adjust the number of nodes and cores per node requested in some of these submit scripts
+     based on runtime, core hour charges, etc.:
+
+   .. code-block::
+
+      #PBS -l select=<number of nodes>:ncpus=<number of CPUs per node>:mpiprocs=<number of MPI processes per node>
+      [snip]
+      mpiexec -n <number of nodes * CPUs per node> ./wrf.exe
 
 3. Modify :code:`namelist.wps.hrrr`:
  
    * :code:`opt_output_from_geogrid_path`:
 
-     .. code-block::
+   .. code-block::
 
-        opt_output_from_geogrid_path = "/path/to/geogrid_output"
+      opt_output_from_geogrid_path = "/path/to/geogrid_output"
 
    * :code:`&ungrib` section:
 
-     .. code-block::
+   .. code-block::
 
-        prefix = "/path/to/ungrib_output/CYCLE"
+      prefix = "/path/to/ungrib_output/<CYCLE>/ungrib/HRRR"
 
-   * Workflow will create :code:`.../ungrib_output/20250324_00/hybrid` and
-     :code:`.../20250324_00/soil` subdirectories automatically.
+   * Note: Workflow will create :code:`.../ungrib_output/<CYCLE>/hybrid` and
+     :code:`.../<CYCLE>/soil` subdirectories automatically if needed.
 
-	   
    * :code:`&metgrid` section:
 
-       .. code-block::
-  
-    	  fg_name = "/glade/scratch/userID/ungrib_output/CYCLE/hybr"
-	  opt_output_from_metgrid_path = "/glade/scratch/userID/metgrid_output/CYCLE"
+     .. code-block::
+
+	fg_name = "/path/to/ungrib_output/CYCLE/ungrib/HRRR_hybr", "/path/to/ungrib_output/CYCLE/ungrib/HRRR_soil",
+	opt_output_from_metgrid_path = "/path/to/metgrid_output/CYCLE/metgrid"
+
+   * If using your own WPS installation, then the user should also update these variables:
+
+     .. code-block::
+
+        opt_geogrid_tbl_path = '/path/to/WPS_install/geogrid',
+        opt_metgrid_tbl_path = '/path/to/WPS_install/metgrid',
 
 Directories specified above need write access; the control script will :code:`mkdir -p` as
 needed and update CYCLE in these namelist variables automatically.
@@ -236,7 +264,7 @@ From the repository root:
 
 * :code:`-b YYYYMMDD_HH`: Start cycle (e.g., :code:`20250324_00`)
       
-* :code:`-c`: Workflow config YAML path
+* :code:`-c`: Workflow config YAML path (can be a relative path from :code:`setup_wps_wrf.py`)
 
 **Automatic Directory Creation**: The Python scripts will create all parent directories for
 :code:`geogrid`, :code:`ungrib`, :code:`metgrid`, etc., based on the configured paths.
@@ -285,7 +313,9 @@ including the required syntax to submit to a queue on Casper from Derecho:
 * :code:`submit_wrf.bash.derecho`
 
 The workflow will automatically copy the appropriate submission script template to the run
-directories and strip the :code:`.casper` or :code:`.derecho` file name suffix if they exist.
+directories and strip the :code:`.casper` or :code:`.derecho` file name suffix if they exist. 
+If running the workflow on a system other than Derecho or Casper, then only one set of those 
+files without a machine-name syntax is needed.
 
 Additionally, note that in :code:`template_dir` the namelist templates must have suffixes
 corresponding to :code:`icbc_model`, to enable WRF experiments that can utilize different
@@ -293,10 +323,9 @@ models for the ICs/LBCs. This is done because there are typically different numb
 or atmospheric levels in each model’s output, which requires different values for certain
 namelist settings, and to not over-complicate the workflow scripts with lots of
 if/then loops to handle model-specific changes to namelist variables that might be further
-complicated with future updates to those external models the number of output levels or
-other key parameters are changed. For example, if a user wants to be able to run WRF
-driven by GFS, GFS-FNL, or HRRR output, the user would need these files in
-:code:`template_dir`:
+complicated with future updates to those external models, the number of output levels, or
+other key parameters. For example, if a user wants to be able to run WRF driven by 
+GFS, GFS-FNL, or HRRR output, the user would need these files in :code:`template_dir`:
 
 * :code:`namelist.input.gfs`
 * :code:`namelist.input.gfs-fnl`
@@ -325,12 +354,14 @@ Note that if the user only intends to run with ONLY hybrid-level or ONLY pressur
 then the user will only need to have :code:`namelist.input.hrrr` present; just ensure that the correct
 value for :code:`num_metgrid_levels` is set in :code:`namelist.input.hrrr`.
 
-Also, note that for the WPS and WRF namelists, this workflow does NOT generate grid/domain information
+Also note that for the WPS and WRF namelists, this workflow does NOT generate grid/domain information
 from scratch or from any user inputs. The user is required to specify the grid/domain details in
 advance in these namelist template files. If the expected template namelist files do not exist prior
 to running the workflow, then the workflow will fail. Other tools already exist for setting grid/domain
 configurations for WPS and WRF namelists, such as
-`WRF Domain Wizard <https://jiririchter.github.io/WRFDomainWizard/>`_.
+`WRF Domain Wizard <https://jiririchter.github.io/WRFDomainWizard/>`_. Future updates to the workflow
+may add the capability to specify domain configuration details in a YAML file to automatically update 
+the WPS and WRF namelists.
 
 One final note: If the user desires to control which variables are written out to history streams,
 then there should also be a file (or multiple file names separated by commas, which could be the
@@ -348,30 +379,33 @@ for that domain. For more information on this file and its required syntax, see 
 `WRF Model README.io_config <https://github.com/wrf-model/WRF/blob/master/doc/README.io_config>`_
 file.
 
-1. **ICBC Download**:
+1. **ICBC Download/Link**:
 
-   * Downloads HRRR native (:code:`hrrr.YYYYMMDD/CONUS/hrrr.tHHz.wrfnatf00.grib2`) then pressure
-     grids (:code:`wrfprs`) for each cycle hour.
+   * Downloads IC/LBC files from a web server or links to them in a local repository. For example, if 
+     :code:`icbc_model = hrrr` and :code:`hrrr_native = True`, then :code:`download_hrrr_from_aws.py`  
+     downloads HRRR native-grid (:code:`hrrr.YYYYMMDD/CONUS/hrrr.tHHz.wrfnatf00.grib2`) then pressure-grid 
+     (:code:`wrfprs`) files for each hour in the requested simulation.
 
-   * Skips download if files already exist locally (useful for repeated runs).
+   * Skips download/linking if files already exist locally (useful for repeated runs).
 
 2. **Ungrib**:
 
-   * Ungrib is serial; the workflow subdivides it per hour and runs 2×N jobs (hybrid and
-     soil) in parallel. Ungrib is run separately as a 1-core job for each icbc_model file
-     in its own directory to avoid ungrib.exe cleanup processes that delete all files
-     matching a starting pattern, which often causes “file not found” errors when
-     running multiple instances of ungrib.exe simultaneously within the same directory.
+   * Ungrib is inherently serial; the workflow subdivides it per hour and runs 2×N jobs (hybrid and
+     soil, if using HRRR native-grid files) or N jobs (for all other IC/LBC models) to make it 
+     embarrassingly parallel. Ungrib is run separately as a 1-core job for each :code:`icbc_model` 
+     file in its own directory to avoid ungrib.exe cleanup processes that delete all files matching 
+     a starting pattern, which often causes “file not found” errors when running multiple instances 
+     of :code:`ungrib.exe` simultaneously within the same directory.
 
    * Includes a short :code:`sleep` (1–3 s) between :code:`qsub` calls to avoid
      overloading the PBS queue.
 
-   * WPS intermediate format files (:code:`YYYYMMDD_HH_ungrib/HRRR_hybrid*`, :code:`*_soil*`)
+   * WPS intermediate format files (:code:`YYYYMMDD_HH/ungrib/HRRR_hybrid*`, :code:`*HRRR_soil*`)
      move into a combined :code:`ungrib/` directory once complete.
 
 3. **Geogrid**:
 
-   * Domain setup; runs once per domain. Subsequent runs can skip by setting
+   * Domain setup; runs once per domain. Subsequent simulations using the same domain can skip by setting
      :code:`do_geogrid: False`.
 
 4. **avg_tsfc**:
@@ -388,37 +422,39 @@ file.
 
 6. **Real**:
 
-   * Takes output from metgrid (met_em_d0* files) and puts it onto the full 3D WRF
-     grid to generate initial-time (wrfinput_d0*), lateral boundary condition
-     (wrfbdy_d01), and (optionally) lower boundary condition (wrflowinp_d0*) files that
-     span the requested simulation time.
+   * Takes output from metgrid (:code:`met_em_d0*` files) and puts it onto the full 
+     3D WRF grid to generate initial-time (:code:`wrfinput_d0*`), lateral boundary 
+     condition (:code:`wrfbdy_d01`), and (optionally) lower boundary condition 
+     (:code:`wrflowinp_d0*`) files that span the requested simulation time.
 
    * Submits via :code:`qsub submit_real.bash`; monitors job status.
 
-   * Logs for every processor executing :code:`real.exe` will appear in :code:`rsl.out.*`
-     and :code:`rsl.error.*` files. Note that WRF writes logs to the same file names, so
-     these will be overwritten unless moved elsewhere.
+   * Logs for every processor executing real.exe will appear in :code:`rsl.out.*` and 
+     :code:`rsl.error.*` files. Note that WRF writes logs to the same file names, 
+     so these will be overwritten unless moved elsewhere.
 
 7. **WRF**:
 
-   * Submits via :code:`qsub submit_wrf.bash`; monitors job status.
+   * Submits WRF model via :code:`qsub submit_wrf.bash`; monitors job status.
 
    * If a user types :code:`CTRL+C`, WRF continues running on the compute
      nodes; logs and :code:`wrfout*` files appear in the :code:`wrf/`
-     subdirectory.
+     subdirectory. Otherwise, the workflow will monitor the WRF simulation's
+     progress, and only exit upon finding an error or success message in the
+     log files. A future update will clarify how to move on to the next WPS/WRF
+     cycle after submitting WRF, without waiting to monitor the WRF job.
       
-Monitoring and Troublshooting
+Monitoring and Troubleshooting
 -----------------------------
 
 * **Log Locations**: Each step (:code:`geogrid/`, :code:`ungrib/`,
   :code:`metgrid/`, :code:`real/`, :code:`wrf/`) has its own :code:`*.log` files
-  (or :code:`rsl.*` files for :code:`real.exe` and :code:`wrf.exe`). Look for
-  :code:`ERROR geogrid.exe failed` or :code:`ext_pkg_open_for_write_begin` to
-  to identify file-permission issues. Currently, the workflow script only looks
-  for key phrases to indicate success or failure of the job, and does not
-  analyze the error messages to provide hints about what might be wrong. Future
-  enhancements to the workflow could include such helpful hints, though.
-
+  (or :code:`rsl.*` files for :code:`real.exe` and :code:`wrf.exe`). Currently, the 
+  workflow scripts only look for key phrases to indicate success or failure of the job, 
+  and does not analyze the error messages to provide hints about what might be wrong. 
+  Future enhancements to the workflow could include such helpful hints, though. The
+  `WRF & MPAS-A Forum <https://forum.mmm.ucar.edu/>`_ is a useful resource to consult 
+  for WPS & WRF troubleshooting issues.
 
 * **Inspecting Jobs**:
 
@@ -441,16 +477,13 @@ Monitoring and Troublshooting
 Reviewing Output
 ----------------
 
-* **Data Directory**: :code:`data/hrrr/hrrr.YYYYMMDD/conus/` for raw GRIB2 files.
+* **Data Directory**: For example for HRRR, :code:`data/hrrr/hrrr.YYYYMMDD/conus/` for raw GRIB2 files for ICs/LBCs.
 
-  
-* **Workflow Directory**: :code:`workflow/fasteddy_nm/YYYYMMDD_HH/` containing:
+* **Workflow Directory**:
 
-  * :code:`ungrib/`, :code:`geogrid/`, :code:`metgrid/`, :code:`real/`,
-    :code:`wrf/` subfolders
+  * :code:`ungrib/`, :code:`geogrid/`, :code:`metgrid/` subfolders within :code:`wps_run_dir/YYYYMMDD_HH/`
 
-  * Log files and :code:`wrfout*` in :code:`wrf/`
+  * Log files, :code:`wrfinput`, :code:`wrfbdy`, and :code:`wrfout*` files within `wrf_run_dir/YYYYMMDD_HH/`
 
-    
 * **Archive**: If :code:`archive: True`, all run artifacts move to
   :code:`arc_dir/YYYYMMDD_HH/` upon completion.
