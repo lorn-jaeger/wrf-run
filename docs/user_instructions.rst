@@ -445,7 +445,7 @@ file.
      cycle after submitting WRF, without waiting to monitor the WRF job.
       
 Monitoring and Troubleshooting
------------------------------
+------------------------------
 
 * **Log Locations**: Each step (:code:`geogrid/`, :code:`ungrib/`,
   :code:`metgrid/`, :code:`real/`, :code:`wrf/`) has its own :code:`*.log` files
