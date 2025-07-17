@@ -100,15 +100,15 @@ Main YAML Configuration
 
    * :code:`icbc_model` and :code:`icbc_source`:
 
-     * :code:`icbc_model`: e.g., :code:`hrrr`, :code:`gfs`, :code:`gfs-fnl`, or :code:`gefs`
+     * :code:`icbc_model`: e.g., :code:`hrrr`: :code:`gfs`: :code:`gfs-fnl`: :code:`gefs`:
 
      * :code:`icbc_source`: :code:`AWS` or :code:`GoogleCloud` to dowload from AWS or
        GoogleCloud HRRR repositories, or :code:`GLADE` to link to local RDA archive
-       files (available for :code:`gfs` and :code:`gfs-fnl` but not for :code:`hrrr`
-       or :code:`gefs`
+       files (available for :code:`gfs` and :code:`gfs-fnl` but not for :code:`hrrr`:
+       or :code:`gefs`:
 
    * :code:`icbc_analysis`: :code:`True` to initialize from the analysis (forecast
-     hour 0) only; :code:`False` would use forecast hours 0-N of a single cycle.
+     hour 0) only; :code:`False`: would use forecast hours 0-N of a single cycle.
 
    * :code:`icbc_fc_dt`: Normally set to :code:`0`. If set to some other positive
      integer N, then ICs/LBCs are obtained  from an N-hour old cycle of the
@@ -128,7 +128,7 @@ Main YAML Configuration
      other than :code:`hrrr`.
 
    * :code:`do_geogrid`, :code:`do_ungrib`, :code:`do_metgrid`, :code:`do_real`,
-     :code:`do_wrf`: Control each WPS/WRF step. Geogrid is a one-time doman setup;
+     :code:`do_wrf`: Control each WPS/WRFstep. Geogrid is a one-time doman setup;
      Ungrib/Metgrid/Real need to be run for each WRF forecast cycle (and
      potentially also for different WRF configurations for the same WRF cycle,
      depending on what is different).
@@ -138,7 +138,7 @@ Main YAML Configuration
      lake-surface temps (avoiding interpolation from oceans, which can result in
      wildly inaccurate surface temperatures for inland lakes). This step is run
      after Ungrib but before Metgrid. If the output file (TAVGSFC) has already
-     been generated from a previous attempt to run the workflow for this WRF cycle /
+     been generated from a previous attempt to run the workflow for this WRF cycle/
      experiment, then set this to :code:`FALSE` to save a few minutes.
 
    * :code:`use_tavgsfc`: :code:`True` to use the output from the :code:`avg_tsfc.exe`
@@ -165,37 +165,36 @@ Edit Template Files
 
 2. Update Account in Submit Scripts:
 
-   * Open each PBS script (:code:`submit_geogrid.bash.casper`, :code:`submit_ungrib.bash.casper`,
+   * Open each PBS script (:code:`submit_geogrid.bash.casper`, :code: `submit_ungrib.bash.casper`,
      etc.) and change:
    
-     .. code-block::
+   .. code-block::
 
-        #PBS -A <user_account_code>
+      #PBS -A <user_account_code>
 
 3. Modify :code:`namelist.wps.hrrr`:
  
    * :code:`opt_output_from_geogrid_path`:
 
-     .. code-block::
+   .. code-block::
 
-        opt_output_from_geogrid_path = "/path/to/geogrid_output"
+      opt_output_from_geogrid_path = "/path/to/geogrid_output"
 
    * :code:`&ungrib` section:
 
-     .. code-block::
+   .. code-block::
 
-        prefix = "/path/to/ungrib_output/CYCLE"
+      prefix = "/path/to/ungrib_output/CYCLE"
 
    * Workflow will create :code:`.../ungrib_output/20250324_00/hybrid` and
      :code:`.../20250324_00/soil` subdirectories automatically.
 
-	   
    * :code:`&metgrid` section:
 
-       .. code-block::
-  
-    	  fg_name = "/glade/scratch/userID/ungrib_output/CYCLE/hybr"
-	  opt_output_from_metgrid_path = "/glade/scratch/userID/metgrid_output/CYCLE"
+     .. code-block::
+
+	fg_name = "/glade/scratch/userID/ungrib_output/CYCLE/hybr"
+	opt_output_from_metgrid_path = "/glade/scratch/userID/metgrid_output/CYCLE"
 
 Directories specified above need write access; the control script will :code:`mkdir -p` as
 needed and update CYCLE in these namelist variables automatically.
@@ -325,7 +324,7 @@ Note that if the user only intends to run with ONLY hybrid-level or ONLY pressur
 then the user will only need to have :code:`namelist.input.hrrr` present; just ensure that the correct
 value for :code:`num_metgrid_levels` is set in :code:`namelist.input.hrrr`.
 
-Also, note that for the WPS and WRF namelists, this workflow does NOT generate grid/domain information
+Also note that for the WPS and WRF namelists, this workflow does NOT generate grid/domain information
 from scratch or from any user inputs. The user is required to specify the grid/domain details in
 advance in these namelist template files. If the expected template namelist files do not exist prior
 to running the workflow, then the workflow will fail. Other tools already exist for setting grid/domain
@@ -388,17 +387,6 @@ file.
 
 6. **Real**:
 
-   * Takes output from metgrid (met_em_d0* files) and puts it onto the full 3D WRF
-     grid to generate initial-time (wrfinput_d0*), lateral boundary condition
-     (wrfbdy_d01), and (optionally) lower boundary condition (wrflowinp_d0*) files that
-     span the requested simulation time.
-
-   * Submits via :code:`qsub submit_real.bash`; monitors job status.
-
-   * Logs for every processor executing :code:`real.exe` will appear in :code:`rsl.out.*`
-     and :code:`rsl.error.*` files. Note that WRF writes logs to the same file names, so
-     these will be overwritten unless moved elsewhere.
-
 7. **WRF**:
 
    * Submits via :code:`qsub submit_wrf.bash`; monitors job status.
@@ -418,7 +406,6 @@ Monitoring and Troublshooting
   for key phrases to indicate success or failure of the job, and does not
   analyze the error messages to provide hints about what might be wrong. Future
   enhancements to the workflow could include such helpful hints, though.
-
 
 * **Inspecting Jobs**:
 
@@ -443,7 +430,6 @@ Reviewing Output
 
 * **Data Directory**: :code:`data/hrrr/hrrr.YYYYMMDD/conus/` for raw GRIB2 files.
 
-  
 * **Workflow Directory**: :code:`workflow/fasteddy_nm/YYYYMMDD_HH/` containing:
 
   * :code:`ungrib/`, :code:`geogrid/`, :code:`metgrid/`, :code:`real/`,
@@ -451,6 +437,5 @@ Reviewing Output
 
   * Log files and :code:`wrfout*` in :code:`wrf/`
 
-    
 * **Archive**: If :code:`archive: True`, all run artifacts move to
   :code:`arc_dir/YYYYMMDD_HH/` upon completion.
