@@ -58,7 +58,7 @@ Main YAML Configuration
 
    .. code-block::
 
-      vi config_fasteddy_nm.yaml
+      vim config_fasteddy_nm.yaml
 
 3. Key fields to update:
 
@@ -69,12 +69,12 @@ Main YAML Configuration
    * :code:`wps_ins_dir` and :code:`wrf_ins_dir`: Directories where WPS and
      WRF are installed; defaults can remain if they are read-accessible.
      (Default values: :code:`/glade/u/home/jaredlee/programs/WPS-4.6-dmpar`
-     and `/glade/u/home/jaredlee/programs/WRF-4.6`, respectively.)
+     and :code:`/glade/u/home/jaredlee/programs/WRF-4.6`, respectively.)
 
      .. note::
 	
-       Currently WPS needs to be compiled for :code:`dmpar` execution, not
-       :code:`serial`, in order to speed up the WPS programs (and on NSF NCAR
+       Currently the workflow assumes WPS is compiled for :code:`dmpar` execution,
+       not :code:`serial`, in order to speed up the WPS programs (and on NSF NCAR
        HPCs, it should be compiled on Casper, not Derecho, while WRF should
        be compiled on Derecho, not Casper).
 
@@ -83,7 +83,8 @@ Main YAML Configuration
      automatically. NOTE: These must be updated from the defaults in the repo.
 
    * :code:`grib_dir`: Location to store downloaded HRRR GRIB2 files. This
-     location must be a path that is write-accessible by the user.
+     location must be a path that is write-accessible by the user and should be 
+     updated from the default value.
 
    * :code:`sim_hrs`: Total simulation length in hours (e.g., :code:`30`). This
      value drives how most subsequent steps run. (Default value: :code:`24`.)
@@ -117,10 +118,10 @@ Main YAML Configuration
        value: :code:`GLADE`.)
 
    * :code:`icbc_analysis`: :code:`True` to initialize from the analysis (forecast
-     hour 0) files from successive IC/LBC model cycles (NOTE: this can only be done
-     retrospectively, and should provide the best-possible ICs/LBCs); :code:`False`: 
-     to initialize from forecast files from a single IC/LBC model cycle. (Default
-     value: :code:`False`.)
+     hour 0) files from successive initial condition/lateral boundary condition (IC/LBC) model
+     cycles (NOTE: this can only be done retrospectively, and should provide the best-possible
+     ICs/LBCs); :code:`False`: to initialize from forecast files from a single IC/LBC model cycle. 
+     (Default value: :code:`False`.)
 
    * :code:`icbc_fc_dt`: Normally set to :code:`0`. If set to some other positive
      integer N, then ICs/LBCs are obtained from an N-hour old cycle of the
@@ -178,7 +179,7 @@ Edit Template Files
 
 2. Update Account in Submit Scripts:
 
-   * Open each PBS script (e.g., :code:`submit_geogrid.bash.casper`, :code: `submit_ungrib.bash.casper`,
+   * Open each PBS script (e.g., :code:`submit_geogrid.bash.casper`, :code:`submit_ungrib.bash.casper`,
      etc.) and specify the desired user account to charge for core hours:
    
    .. code-block::
@@ -190,9 +191,9 @@ Edit Template Files
 
    .. code-block::
 
-      #PBS -l select=<number of nodes>:ncpus=<number of CPUs per node>:mpiprocs=<number of MPI processes per node>
+      #PBS -l select=<# of nodes>:ncpus=<# of CPUs per node>:mpiprocs=<# of MPI processes per node>
       [snip]
-      mpiexec -n <number of nodes * CPUs per node> ./wrf.exe
+      mpiexec -n <# of nodes * CPUs per node> ./wrf.exe
 
 3. Modify :code:`namelist.wps.hrrr`:
  
@@ -215,8 +216,8 @@ Edit Template Files
 
      .. code-block::
 
-	fg_name = "/path/to/ungrib_output/CYCLE/ungrib/HRRR_hybr", "/path/to/ungrib_output/CYCLE/ungrib/HRRR_soil",
-	opt_output_from_metgrid_path = "/path/to/metgrid_output/CYCLE/metgrid"
+	fg_name = "/path/to/ungrib_output/<CYCLE>/ungrib/HRRR_hybr", "/path/to/ungrib_output/CYCLE/ungrib/HRRR_soil",
+	opt_output_from_metgrid_path = "/path/to/metgrid_output/<CYCLE>/metgrid"
 
    * If using your own WPS installation, then the user should also update these variables:
 
@@ -226,7 +227,7 @@ Edit Template Files
         opt_metgrid_tbl_path = '/path/to/WPS_install/metgrid',
 
 Directories specified above need write access; the control script will :code:`mkdir -p` as
-needed and update CYCLE in these namelist variables automatically.
+needed and update :code:`<CYCLE>` in these namelist variables automatically.
 	
 Python Environment Setup
 ------------------------
@@ -242,7 +243,7 @@ Python Environment Setup
    .. code-block::
 
       pip install -r environment.yml
-      # or ensure 'yaml', 'boto3', 'netCDF4', 'numpy', etc., import without errors
+      # or ensure 'yaml', 'netCDF4', 'numpy', 'pandas', etc., import without errors
 
 3. Dependencies are declared in `environment.yml <https://github.com/NCAR/wps_wrf_workflow/blob/main/environment.yml>`_,
    which is based on NSF NCAR's NPL 2024a stack plus extras.
@@ -313,9 +314,7 @@ including the required syntax to submit to a queue on Casper from Derecho:
 * :code:`submit_wrf.bash.derecho`
 
 The workflow will automatically copy the appropriate submission script template to the run
-directories and strip the :code:`.casper` or :code:`.derecho` file name suffix if they exist. 
-If running the workflow on a system other than Derecho or Casper, then only one set of those 
-files without a machine-name syntax is needed.
+directories and strip the :code:`.casper` or :code:`.derecho` file name suffix if they exist.
 
 Additionally, note that in :code:`template_dir` the namelist templates must have suffixes
 corresponding to :code:`icbc_model`, to enable WRF experiments that can utilize different
@@ -335,7 +334,7 @@ GFS, GFS-FNL, or HRRR output, the user would need these files in :code:`template
 * :code:`namelist.wps.hrrr`
 
 Note that users only need to have the template files corresponding to the desired :code:`icbc_model`
-variants.
+variants that they would like to be available to use.
 
 If users use HRRR model output as ICs/LBCs for WRF, note that the number of vertical levels
 is different in the native (hybrid)-level output (51) than in the pressure-level output
@@ -393,7 +392,7 @@ file.
    * Ungrib is inherently serial; the workflow subdivides it per hour and runs 2×N jobs (hybrid and
      soil, if using HRRR native-grid files) or N jobs (for all other IC/LBC models) to make it 
      embarrassingly parallel. Ungrib is run separately as a 1-core job for each :code:`icbc_model` 
-     file in its own directory to avoid ungrib.exe cleanup processes that delete all files matching 
+     file in its own directory to avoid :code:`ungrib.exe` cleanup processes that delete all files matching 
      a starting pattern, which often causes “file not found” errors when running multiple instances 
      of :code:`ungrib.exe` simultaneously within the same directory.
 
@@ -411,8 +410,7 @@ file.
 4. **avg_tsfc**:
 
    * Calculates a 24-h average surface temperature field to improve lake-surface
-     temps in land masks. Ignores times outside whole 24-h periods the by default -
-     needs validation.
+     temps in land masks. Ignores times outside whole 24-h periods by default.
 
 5. **Metgrid**:
 
@@ -465,7 +463,7 @@ Monitoring and Troubleshooting
 
 * **Common Errors**:
 
-  * **Error in ext_pkg_open_for_write_begin**:: Write-permission error on
+  * **Error in ext_pkg_open_for_write_begin**: Write-permission error on
     output path - verify :code:`wps_run_dir` and template prefixes.
 
   * **Missing Python modules**: Ensure the Python 3.11 environment with
@@ -483,7 +481,7 @@ Reviewing Output
 
   * :code:`ungrib/`, :code:`geogrid/`, :code:`metgrid/` subfolders within :code:`wps_run_dir/YYYYMMDD_HH/`
 
-  * Log files, :code:`wrfinput`, :code:`wrfbdy`, and :code:`wrfout*` files within `wrf_run_dir/YYYYMMDD_HH/`
+  * Log files, :code:`wrfinput*`, :code:`wrfbdy`, and :code:`wrfout*` files within `wrf_run_dir/YYYYMMDD_HH/`
 
 * **Archive**: If :code:`archive: True`, all run artifacts move to
   :code:`arc_dir/YYYYMMDD_HH/` upon completion.
