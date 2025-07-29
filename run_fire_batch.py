@@ -13,9 +13,11 @@ configuration is written and ``setup_wps_wrf.py`` is invoked.
 import argparse
 import shutil
 import subprocess
+import sys
 import pandas as pd
 from pathlib import Path
 import yaml
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def update_wps_namelist(nml_path: Path, lat: float, lon: float) -> None:
@@ -53,6 +55,8 @@ def main() -> None:
     p.add_argument('--cfg-out', default='config/generated',
                    help='Directory to write per-fire YAML configs')
     p.add_argument('--dry-run', action='store_true', help='Print commands without executing')
+    p.add_argument('--max-workers', type=int, default=1,
+                   help='Number of concurrent workers to launch')
     args = p.parse_args()
 
     df = pd.read_csv(Path(args.csv))
@@ -60,36 +64,55 @@ def main() -> None:
     cfg_out_dir = Path(args.cfg_out)
     cfg_out_dir.mkdir(parents=True, exist_ok=True)
 
-    for _, row in df.iterrows():
+    def process_fire(row):
         fire_id = str(row['fire_id'])
         start = str(row['start'])
         end = str(row['end'])
         lat = float(row['lat'])
         lon = float(row['lon'])
 
-        fire_template = Path(args.template_dir).parent / f"{Path(args.template_dir).name}_{fire_id}"
-        if fire_template.exists():
-            shutil.rmtree(fire_template)
-        shutil.copytree(args.template_dir, fire_template)
-        update_wps_namelist(fire_template / 'namelist.wps.hrrr', lat, lon)
+        try:
+            fire_template = Path(args.template_dir).parent / f"{Path(args.template_dir).name}_{fire_id}"
+            if fire_template.exists():
+                shutil.rmtree(fire_template)
+            shutil.copytree(args.template_dir, fire_template)
+            update_wps_namelist(fire_template / 'namelist.wps.hrrr', lat, lon)
 
-        wps_dir = Path(args.wps_parent) / fire_id
-        wrf_dir = Path(args.wrf_parent) / fire_id
+            wps_dir = Path(args.wps_parent) / fire_id
+            wrf_dir = Path(args.wrf_parent) / fire_id
 
-        cfg = dict(base_cfg)
-        cfg['template_dir'] = str(fire_template.resolve())
-        cfg['wps_run_dir'] = str(wps_dir.resolve())
-        cfg['wrf_run_dir'] = str(wrf_dir.resolve())
+            cfg = dict(base_cfg)
+            cfg['template_dir'] = str(fire_template.resolve())
+            cfg['wps_run_dir'] = str(wps_dir.resolve())
+            cfg['wrf_run_dir'] = str(wrf_dir.resolve())
 
-        cfg_file = cfg_out_dir / f"{fire_id}.yaml"
-        with cfg_file.open('w') as f:
-            yaml.safe_dump(cfg, f)
+            cfg_file = cfg_out_dir / f"{fire_id}.yaml"
+            with cfg_file.open('w') as f:
+                yaml.safe_dump(cfg, f)
 
-        cmd = ['python', 'setup_wps_wrf.py', '-b', start, '-e', end, '-c', str(cfg_file)]
-        if args.dry_run:
-            print(' '.join(cmd))
-        else:
-            subprocess.run(cmd, check=True)
+            cmd = ['python', 'setup_wps_wrf.py', '-b', start, '-e', end, '-c', str(cfg_file)]
+            if args.dry_run:
+                print(' '.join(cmd))
+            else:
+                subprocess.run(cmd, check=True)
+            return fire_id, None
+        except Exception as exc:
+            return fire_id, exc
+
+    rows = [row for _, row in df.iterrows()]
+
+    if args.max_workers > 1:
+        with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+            futures = {ex.submit(process_fire, row): row for row in rows}
+            for fut in as_completed(futures):
+                fire_id, exc = fut.result()
+                if exc:
+                    print(f"Error processing {fire_id}: {exc}", file=sys.stderr)
+    else:
+        for row in rows:
+            fire_id, exc = process_fire(row)
+            if exc:
+                print(f"Error processing {fire_id}: {exc}", file=sys.stderr)
 
 
 if __name__ == '__main__':
