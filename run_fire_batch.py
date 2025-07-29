@@ -7,13 +7,14 @@ where ``start`` and ``end`` are in YYYYMMDD_HH format.
 
 For each fire a copy of a template directory is created with the
 latitude/longitude inserted into ``namelist.wps.hrrr``. A per-fire YAML
-configuration is written and ``setup_wps_wrf.py`` is invoked.
+configuration is written and ``setup_wps_wrf.py`` is invoked.  The script
+supports concurrent execution and configurable logging.
 """
 
 import argparse
+import logging
 import shutil
 import subprocess
-import sys
 import pandas as pd
 from pathlib import Path
 import yaml
@@ -57,9 +58,21 @@ def main() -> None:
     p.add_argument('--dry-run', action='store_true', help='Print commands without executing')
     p.add_argument('--max-workers', type=int, default=1,
                    help='Number of concurrent workers to launch')
+    p.add_argument('--log-level', default='INFO',
+                   help='Logging level (DEBUG, INFO, WARNING, ERROR)')
     args = p.parse_args()
 
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format='%(asctime)s %(levelname)s:%(message)s'
+    )
+    logger = logging.getLogger(__name__)
+
     df = pd.read_csv(Path(args.csv))
+    duplicate_ids = df.loc[df['fire_id'].duplicated(), 'fire_id'].unique()
+    if len(duplicate_ids) > 0:
+        p.error(f"Duplicate fire_id(s) found in CSV: {', '.join(map(str, duplicate_ids))}")
+
     base_cfg = yaml.safe_load(Path(args.base_config).read_text())
     cfg_out_dir = Path(args.cfg_out)
     cfg_out_dir.mkdir(parents=True, exist_ok=True)
@@ -71,48 +84,55 @@ def main() -> None:
         lat = float(row['lat'])
         lon = float(row['lon'])
 
+        logger.info('Processing fire %s', fire_id)
+
         try:
             fire_template = Path(args.template_dir).parent / f"{Path(args.template_dir).name}_{fire_id}"
-            if fire_template.exists():
-                shutil.rmtree(fire_template)
-            shutil.copytree(args.template_dir, fire_template)
-            update_wps_namelist(fire_template / 'namelist.wps.hrrr', lat, lon)
-
             wps_dir = Path(args.wps_parent) / fire_id
             wrf_dir = Path(args.wrf_parent) / fire_id
+            cfg_file = cfg_out_dir / f"{fire_id}.yaml"
+
+            for path in (fire_template, wps_dir, wrf_dir, cfg_file):
+                if path.exists():
+                    raise FileExistsError(f"Path {path} already exists for fire_id {fire_id}")
+
+            shutil.copytree(args.template_dir, fire_template)
+            update_wps_namelist(fire_template / 'namelist.wps.hrrr', lat, lon)
 
             cfg = dict(base_cfg)
             cfg['template_dir'] = str(fire_template.resolve())
             cfg['wps_run_dir'] = str(wps_dir.resolve())
             cfg['wrf_run_dir'] = str(wrf_dir.resolve())
 
-            cfg_file = cfg_out_dir / f"{fire_id}.yaml"
             with cfg_file.open('w') as f:
                 yaml.safe_dump(cfg, f)
 
             cmd = ['python', 'setup_wps_wrf.py', '-b', start, '-e', end, '-c', str(cfg_file)]
             if args.dry_run:
-                print(' '.join(cmd))
+                logger.info('DRY RUN: %s', ' '.join(cmd))
             else:
+                logger.info('Running %s', ' '.join(cmd))
                 subprocess.run(cmd, check=True)
             return fire_id, None
         except Exception as exc:
+            logger.exception('Failed processing %s', fire_id)
             return fire_id, exc
 
     rows = [row for _, row in df.iterrows()]
 
     if args.max_workers > 1:
+        logger.info('Processing %d fires with %d workers', len(rows), args.max_workers)
         with ThreadPoolExecutor(max_workers=args.max_workers) as ex:
             futures = {ex.submit(process_fire, row): row for row in rows}
             for fut in as_completed(futures):
                 fire_id, exc = fut.result()
                 if exc:
-                    print(f"Error processing {fire_id}: {exc}", file=sys.stderr)
+                    logger.error('Error processing %s: %s', fire_id, exc)
     else:
         for row in rows:
             fire_id, exc = process_fire(row)
             if exc:
-                print(f"Error processing {fire_id}: {exc}", file=sys.stderr)
+                logger.error('Error processing %s: %s', fire_id, exc)
 
 
 if __name__ == '__main__':

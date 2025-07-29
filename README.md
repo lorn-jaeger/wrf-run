@@ -19,3 +19,32 @@ A full usage statement with additional options can be seen by executing:
 ./setup_wps_wrf.py -h
 ```
 Keep in mind that any default settings for many of these parameters are overridden if provided in the config yaml file that is passed to setup_wps_wrf.py.
+
+## Running multiple fires
+
+Use `run_fire_batch.py` to automate running `setup_wps_wrf.py` for many fire
+locations. The input CSV must contain one row per fire with columns
+`fire_id,start,end,lat,lon`:
+
+```
+fire_id,start,end,lat,lon
+test1,20240601_00,20240602_00,35.6,-105.3
+test2,20240605_00,20240606_00,34.1,-104.2
+```
+
+For every `fire_id` the script copies the template directory and writes a
+per-fire configuration so outputs end up under unique directories such as
+`wps_runs/test1` and `wrf_runs/test1`. **All `fire_id` values must be unique.**
+If any per-fire directory already exists the script stops to avoid clobbering
+previous results.
+
+Run the batch job with four concurrent workers:
+
+```
+python run_fire_batch.py fires.csv --max-workers 4
+```
+
+Other useful options include `--dry-run` to print commands without executing
+them and `--log-level DEBUG` for verbose logging. Custom parent directories for
+WPS or WRF runs can also be supplied with `--wps-parent` and `--wrf-parent`.
+
