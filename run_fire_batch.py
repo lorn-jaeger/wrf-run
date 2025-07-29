@@ -60,6 +60,10 @@ def main() -> None:
     args = p.parse_args()
 
     df = pd.read_csv(Path(args.csv))
+    duplicate_ids = df.loc[df['fire_id'].duplicated(), 'fire_id'].unique()
+    if len(duplicate_ids) > 0:
+        p.error(f"Duplicate fire_id(s) found in CSV: {', '.join(map(str, duplicate_ids))}")
+
     base_cfg = yaml.safe_load(Path(args.base_config).read_text())
     cfg_out_dir = Path(args.cfg_out)
     cfg_out_dir.mkdir(parents=True, exist_ok=True)
@@ -73,20 +77,22 @@ def main() -> None:
 
         try:
             fire_template = Path(args.template_dir).parent / f"{Path(args.template_dir).name}_{fire_id}"
-            if fire_template.exists():
-                shutil.rmtree(fire_template)
-            shutil.copytree(args.template_dir, fire_template)
-            update_wps_namelist(fire_template / 'namelist.wps.hrrr', lat, lon)
-
             wps_dir = Path(args.wps_parent) / fire_id
             wrf_dir = Path(args.wrf_parent) / fire_id
+            cfg_file = cfg_out_dir / f"{fire_id}.yaml"
+
+            for path in (fire_template, wps_dir, wrf_dir, cfg_file):
+                if path.exists():
+                    raise FileExistsError(f"Path {path} already exists for fire_id {fire_id}")
+
+            shutil.copytree(args.template_dir, fire_template)
+            update_wps_namelist(fire_template / 'namelist.wps.hrrr', lat, lon)
 
             cfg = dict(base_cfg)
             cfg['template_dir'] = str(fire_template.resolve())
             cfg['wps_run_dir'] = str(wps_dir.resolve())
             cfg['wrf_run_dir'] = str(wrf_dir.resolve())
 
-            cfg_file = cfg_out_dir / f"{fire_id}.yaml"
             with cfg_file.open('w') as f:
                 yaml.safe_dump(cfg, f)
 
