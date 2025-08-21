@@ -118,6 +118,9 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
     beg_mn = beg_dt.strftime('%M')
     end_mn = end_dt.strftime('%M')
 
+    # Make sure this is a path object, not just a string
+    metgrid_dir = pathlib.Path(metgrid_dir)
+
     ## Create the run directory if it doesn't already exist
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +177,16 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
 
     ## Link to metgrid output files (met_em)
     files = glob.glob(str(metgrid_dir)+'/met_em*')
+    # Check if there are any met_em files at the expected location. If none, then exit before running real.
+    if not files:
+        log.error('')
+        log.error(f'ERROR: No met_em* files found in {metgrid_dir}.')
+        # Now also check if the directory even exists
+        if not metgrid_dir.is_dir():
+            log.error('')
+            log.error(f'ERROR: Directory {metgrid_dir} does not exist.')
+        log.error('')
+        sys.exit(1)
     for file in files:
         ret,output = exec_command(['ln','-sf',file,'.'], log)
 

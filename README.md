@@ -1,6 +1,11 @@
 # wps_wrf_workflow
 Python-based modular workflow for configuring and running WPS and WRF, and optionally also post-processing programs like UPP. Because of its modular nature, scripts to do additional steps can easily be added if desired.
 
+For more complete user instructions, please see the ReadTheDocs documentation here:
+https://wps-wrf-workflow.readthedocs.io/en/latest/user_instructions.html
+
+If you find a bug while using this workflow, please submit an Issue describing the problem and how to reproduce it.
+
 Before running this Python-based workflow, you need to do the following steps:
  - Have compiled versions of WRF and WPS available (for now, WPS should be compiled with dmpar; later updates may make this workflow compatible with serial-compiled WPS)
  - Create a template namelist.wps for WPS for your simulation domain(s)

@@ -66,6 +66,15 @@ Main YAML Configuration
      local clone, so that the workflow picks up the user's edits to template
      namelists, job submission scripts, etc.
 
+   * :code:`exp_name`: Optional. Add/modify this field if you want to give this
+     simulation an experiment name (e.g., if using different IC/LBC models or
+     testing different WRF namelist options). (Default: :code:`None`)
+
+   * :code:`exp_wrf_only`: Optional. If :code:`exp_name` is set but you only want the
+     experiment name to apply to real/WRF while using the same metgrid output
+     (:code:`met_em*` files) for all experiments (e.g., if only WRF namelist options
+     are being changed), then set this to :code:`True`. (Default: :code:`False`.)
+
    * :code:`wps_ins_dir` and :code:`wrf_ins_dir`: Directories where WPS and
      WRF are installed; defaults can remain if they are read-accessible.
      (Default values: :code:`/glade/u/home/jaredlee/programs/WPS-4.6-dmpar`
