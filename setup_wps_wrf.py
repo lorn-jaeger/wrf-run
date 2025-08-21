@@ -38,6 +38,7 @@ def parse_args():
      'sim_hrs': 'integer number of hours for WRF simulation (default: 24)',
      'icbc_fc_dt': 'integer number of hours prior to WRF cycle time for IC/LBC model cycle (default: 0)',
      'exp_name': 'experiment name (e.g., exp01, mem01, etc.) (default: None)',
+     'exp_wrf_only': 'if setting exp_name, should that apply only to real/wrf and use a single common WPS setup? (default: False)',
      'realtime': 'flag when running in real-time to keep this script running until WRF is done',
      'archive': 'flag to archive wrfout, wrfinput, wrfbdy, and namelist files to another location',
      'icbc_model': 'string specifying the model to be used for ICs/LBCs (default: GEFS)',
@@ -108,6 +109,7 @@ def parse_args():
     params.setdefault('sim_hrs', 24)
     params.setdefault('icbc_fc_dt',0)
     params.setdefault('exp_name', None)
+    params.setdefault('exp_wrf_only', False)
     params.setdefault('realtime', False)
     params.setdefault('archive', False)
     params.setdefault('ungrib_domain', 'full')
@@ -171,7 +173,7 @@ def parse_args():
 
     return params
 
-def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, exp_name, realtime, archive, hostname,
+def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, exp_name, exp_wrf_only, realtime, archive, hostname,
          icbc_model, icbc_source, icbc_analysis, ungrib_domain, grib_dir_parent, wps_ins_dir, wrf_ins_dir, hrrr_native,
          wps_run_dir_parent, wrf_run_dir_parent, template_dir, arc_dir_parent,
          upp_working_dir, upp_yaml, upp_domains,
@@ -241,7 +243,10 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
             ## Directory for archival
             arc_dir = arc_dir_parent.joinpath(cycle_yyyymmdd_hh)
         else:
-            wps_run_dir = wps_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
+            if exp_wrf_only:
+                wps_run_dir = wps_run_dir_parent.joinpath(cycle_yyyymmdd_hh)
+            else:
+                wps_run_dir = wps_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
             wrf_run_dir = wrf_run_dir_parent.joinpath(cycle_yyyymmdd_hh,exp_name)
             ## Directory for archival
             arc_dir = arc_dir_parent.joinpath(cycle_yyyymmdd_hh, exp_name)
