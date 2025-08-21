@@ -274,6 +274,15 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
             # namelist.input.hrrr.mem01, namelist.input.gfs.mem02, etc.) & run workflow separately for each icbc_model.
             wrf_nml_tmp = 'namelist.input.' + icbc_model.lower() + '.'+exp_name
 
+            # As above, handle use of HRRR (hybr or pres) when using an exp_name
+            if icbc_model in variants_hrrr:
+                if hrrr_native:
+                    wrf_nml_tmp_hrrr = f'namelist.input.hrrr.hybr.{exp_name}'
+                else:
+                    wrf_nml_tmp_hrrr = f'namelist.input.hrrr.pres.{exp_name}'
+                if template_dir.joinpath(wrf_nml_tmp_hrrr).exists():
+                    wrf_nml_tmp = wrf_nml_tmp_hrrr
+
         # Add some error-checking for the existence of the expected WPS & WRF namelist templates
         if not template_dir.joinpath(wps_nml_tmp).exists():
             log.error('ERROR: Expected WPS namelist template file ' + str(
