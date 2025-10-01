@@ -525,12 +525,12 @@ def main(cycle_dt_str_beg, cycle_dt_str_end, cycle_int_h, sim_hrs, icbc_fc_dt, e
 
         if do_wrf:
             cmd_list = ['python', 'run_wrf.py', '-b', cycle_str, '-s', str(sim_hrs), '-w', wrf_ins_dir,
-                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp, '-m',
+                        '-r', wrf_run_dir, '-t', template_dir, '-i', icbc_model, '-n', wrf_nml_tmp,
                         '-q', scheduler, '-a', hostname]
             if exp_name is not None:
                 cmd_list.append('-x')
                 cmd_list.append(exp_name)
-            if do_upp or archive:
+            if do_upp or archive or realtime:
                 cmd_list.append('-m')
             ret, output = exec_command(cmd_list, log)
 
