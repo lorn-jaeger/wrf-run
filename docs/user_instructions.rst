@@ -173,12 +173,13 @@ Main YAML Configuration
      (namelists, wrfout*, logs) into an archival directory (set :code:`arc_dir` to a
      write accessible directory) for easy retrieval. (Default value: :code:`False`.)
 
-   * :code:`realtime`: When :code:`True`, the workflow will hold after submitting WRF
-     and monitor the progress of the WRF job, and not move on to the next step of the
-     workflow or the next model cycle until WRF completes successfully. If :code:`False`,
-     then the workflow will move to the next step or model cycle immediately after
-     submitting WRF to the queue, without waiting to monitor its status, progress, or
-     success. (Default value: :code:`False`.)
+   * :code:`realtime`: When :code:`True` while :code:`run_wrf = True`, the workflow
+     will hold after submitting WRF and monitor the progress of the WRF job, and not
+     move on to the next step of the workflow or the next model cycle until WRF completes
+     successfully. If :code:`realtime = False` while :code:`run_wrf = True`, then the
+     workflow will move to the next step or model cycle immediately after submitting WRF
+     to the queue, without waiting to monitor its status, progress, or success. If
+     :code:`run_wrf = False`, then :code:`realtime` has no effect. (Default value: :code:`False`.)
 
 All other fields can remain at their default values unless specialized
 cases arise.
