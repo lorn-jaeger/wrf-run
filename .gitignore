@@ -6,3 +6,6 @@
 
 # sphinx output
 docs/_build
+
+
+/bin
