@@ -4,7 +4,7 @@
 #PBS -q casper
 #PBS -l select=1:ncpus=4:mpiprocs=4
 #PBS -l walltime=0:30:00
-#PBS -A NWSA0002
+#PBS -A UUMM0004
 
 module load openmpi
 module list

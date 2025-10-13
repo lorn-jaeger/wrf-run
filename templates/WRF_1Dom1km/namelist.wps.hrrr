@@ -5,7 +5,7 @@
  end_date   = '2024-02-08_06:00:00',
  interval_seconds = 3600,
  io_form_geogrid = 2,
- opt_output_from_geogrid_path = 'YOURSCRATCHPATH/wps/geogrid/',
+ opt_output_from_geogrid_path = '/glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps/geogrid/',
 /
 
 &geogrid
@@ -25,18 +25,18 @@
  truelat2  =  41.5368,
  stand_lon = -123.5552,
  geog_data_path = '/glade/work/wrfhelp/WPS_GEOG',
- opt_geogrid_tbl_path = 'YOURPATH/WPS-4.6-dmpar-casper/geogrid',
+ opt_geogrid_tbl_path = '/glade/home/ljaeger/wrf-run/bin/WPS-4.6-dmpar-casper/geogrid',
 /
 
 &ungrib
  out_format = 'WPS',
- prefix = 'YOURSCRATCHPATH/wps/20250324_00/ungrib/HRRR',
+ prefix = '/glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps/20250324_00/ungrib/HRRR',
 /
 
 &metgrid
- fg_name = 'YOURSCRATCHPATH/wps/20250324_00/ungrib/HRRR', 'YOURSCRATCHPATH/wps/20220801_00/ungrib/HRRR_soil',
+ fg_name = '/glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps/20250324_00/ungrib/HRRR', '/glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps/20220801_00/ungrib/HRRR_soil',
  io_form_metgrid = 2,
  constants_name = 'TAVGSFC'
- opt_output_from_metgrid_path = 'YOURSCRATCHPATH/wps/20250324_00/metgrid',
- opt_metgrid_tbl_path = 'YOURPATH/WPS-4.6-dmpar-casper/metgrid',
+ opt_output_from_metgrid_path = '/glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps/20250324_00/metgrid',
+ opt_metgrid_tbl_path = '/glade/home/ljaeger/wrf-run/bin/WPS-4.6-dmpar-casper/metgrid',
 /
