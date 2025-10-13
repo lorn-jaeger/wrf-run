@@ -91,7 +91,63 @@ taskid: 0 hostname: dec2440
 
 Looked on the forums and there is a fix here. https://forum.mmm.ucar.edu/threads/error-ran-out-of-valid-boundary-conditions-in-file-wrfbdy_d01.10340/
 
-Setting 30 hours of simulation runs 31 hours, but the script only builds 30 hours of input, hence the crash. Fortunatly we still get all the data we need. 
+```
+ncdump -v Times wrfbdy_d01
+
+data:
+
+ Times =
+  "2020-08-18_18:00:00",
+  "2020-08-18_19:00:00",
+  "2020-08-18_20:00:00",
+  "2020-08-18_21:00:00",
+  "2020-08-18_22:00:00",
+  "2020-08-18_23:00:00",
+  "2020-08-19_00:00:00",
+  "2020-08-19_01:00:00",
+  "2020-08-19_02:00:00",
+  "2020-08-19_03:00:00",
+  "2020-08-19_04:00:00",
+  "2020-08-19_05:00:00",
+  "2020-08-19_06:00:00",
+  "2020-08-19_07:00:00",
+  "2020-08-19_08:00:00",
+  "2020-08-19_09:00:00",
+  "2020-08-19_10:00:00",
+  "2020-08-19_11:00:00",
+  "2020-08-19_12:00:00",
+  "2020-08-19_13:00:00",
+  "2020-08-19_14:00:00",
+  "2020-08-19_15:00:00",
+  "2020-08-19_16:00:00",
+  "2020-08-19_17:00:00",
+  "2020-08-19_18:00:00",
+  "2020-08-19_19:00:00",
+  "2020-08-19_20:00:00",
+  "2020-08-19_21:00:00",
+  "2020-08-19_22:00:00",
+  "2020-08-19_23:00:00" ;
+}
+```
+
+```
+ls wrfout_d01_2020-08-*
+
+wrfout_d01_2020-08-18_18:00:00  wrfout_d01_2020-08-18_22:00:00  wrfout_d01_2020-08-19_02:00:00  wrfout_d01_2020-08-19_06:00:00  wrfout_d01_2020-08-19_10:00:00  wrfout_d01_2020-08-19_14:00:00  wrfout_d01_2020-08-19_18:00:00  wrfout_d01_2020-08-19_22:00:00
+wrfout_d01_2020-08-18_19:00:00  wrfout_d01_2020-08-18_23:00:00  wrfout_d01_2020-08-19_03:00:00  wrfout_d01_2020-08-19_07:00:00  wrfout_d01_2020-08-19_11:00:00  wrfout_d01_2020-08-19_15:00:00  wrfout_d01_2020-08-19_19:00:00  wrfout_d01_2020-08-19_23:00:00
+wrfout_d01_2020-08-18_20:00:00  wrfout_d01_2020-08-19_00:00:00  wrfout_d01_2020-08-19_04:00:00  wrfout_d01_2020-08-19_08:00:00  wrfout_d01_2020-08-19_12:00:00  wrfout_d01_2020-08-19_16:00:00  wrfout_d01_2020-08-19_20:00:00  wrfout_d01_2020-08-20_00:00:00
+wrfout_d01_2020-08-18_21:00:00  wrfout_d01_2020-08-19_01:00:00  wrfout_d01_2020-08-19_05:00:00  wrfout_d01_2020-08-19_09:00:00  wrfout_d01_2020-08-19_13:00:00  wrfout_d01_2020-08-19_17:00:00  wrfout_d01_2020-08-19_21:00:00
+```
+
+```
+ls wrfout_d01_2020-08-* | wc -l
+
+31
+```
+
+Should be 30
+
+Setting 30 hours of simulation runs 31 hours, but the script only builds 30 hours of input, hence the crash. Fortunatley we still get all the data we need. I have to look through the configs and code to see where the mismatch is. Hopefully I can either patch it or call the script in a different way so that it is no longer an issue. 
 
 
 
