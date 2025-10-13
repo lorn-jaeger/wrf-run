@@ -1,7 +1,7 @@
 sim_hrs: 30
-template_dir: /glade/home/ljaeger/wrf-run/templates/WRF_1Dom1km
-wps_ins_dir: /glade/home/ljaeger/wrf-run/bin/WPS-4.6-dmpar-casper
-wrf_ins_dir: /glade/home/ljaeger/wrf-run/bin/WRF-4.6
+template_dir: /glade/u//home/ljaeger/wrf-run/templates/WRF_1Dom1km
+wps_ins_dir: /glade/u/home/ljaeger/wrf-run/bin/WPS-4.6-dmpar-casper
+wrf_ins_dir: /glade/u/home/ljaeger/wrf-run/bin/WRF-4.6
 wps_run_dir: /glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps
 wrf_run_dir: /glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wrf
 grib_dir: /glade/derecho/scratch/ljaeger/data/hrrr
