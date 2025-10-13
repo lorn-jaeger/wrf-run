@@ -21,7 +21,7 @@ I changed each of the marked paths in the configs and templates to the actual lo
 Previous runs crashed MPI, Jared told us that we were using too many CPU cores for this domain size and that we should reduce it to 128.
 
 
-### Test Run
+### Test Run 1
 
 Command run
 
@@ -55,3 +55,45 @@ setup_wps_wrf.py: 2025-10-12T18:56:24 - Error Executing Command: python run_geog
 setup_wps_wrf.py: 2025-10-12T18:56:24 - Return Code: 1
 setup_wps_wrf.py: 2025-10-12T18:56:24 - Exiting
 ```
+
+Fixed by making tmp directory world writable 
+
+### Test Run 2
+
+```
+python setup_wps_wrf.py -b 20200818_18 -c config/config_wrfonly_UM.yaml
+```
+
+Successful completion of the full script. All hours of the simulation run until the final step where they crashed. 
+
+Error at end of rsl.out and rsl.error files
+
+```
+Timing for main: time 2020-08-19_23:59:12 on domain   1:    0.23203 elapsed seconds
+Timing for main: time 2020-08-19_23:59:18 on domain   1:    0.23441 elapsed seconds
+Timing for main: time 2020-08-19_23:59:24 on domain   1:    0.23361 elapsed seconds
+Timing for main: time 2020-08-19_23:59:30 on domain   1:    0.23314 elapsed seconds
+Timing for main: time 2020-08-19_23:59:36 on domain   1:    0.23241 elapsed seconds
+Timing for main: time 2020-08-19_23:59:42 on domain   1:    0.23211 elapsed seconds
+Timing for main: time 2020-08-19_23:59:48 on domain   1:    0.23334 elapsed seconds
+Timing for main: time 2020-08-19_23:59:54 on domain   1:    0.23326 elapsed seconds
+Timing for main: time 2020-08-20_00:00:00 on domain   1:    0.23268 elapsed seconds
+Timing for Writing wrfout_d01_2020-08-20_00:00:00 for domain        1:    7.99026 elapsed seconds
+Timing for Writing restart for domain        1:   33.94203 elapsed seconds
+d01 2020-08-20_00:00:00  Input data is acceptable to use: wrfbdy_d01
+           1  input_wrf: wrf_get_next_time current_date: 2020-08-20_00:00:00 Status =           -4
+-------------- FATAL CALLED ---------------
+FATAL CALLED FROM FILE:  <stdin>  LINE:    1159
+ ---- ERROR: Ran out of valid boundary conditions in file wrfbdy_d01
+-------------------------------------------
+taskid: 0 hostname: dec2440
+```
+
+Looked on the forums and there is a fix here. https://forum.mmm.ucar.edu/threads/error-ran-out-of-valid-boundary-conditions-in-file-wrfbdy_d01.10340/
+
+Setting 30 hours of simulation runs 31 hours, but the script only builds 30 hours of input, hence the crash. Fortunatly we still get all the data we need. 
+
+
+
+
+
