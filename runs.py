@@ -6,7 +6,7 @@ import pandas as pd
 import subprocess
 from pathlib import Path
 
-df = pd.read_csv("fires.csv").head(10)
+df = pd.read_csv("runs.csv").head(10)
 Path("logs").mkdir(exist_ok=True)
 
 procs = []
