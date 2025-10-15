@@ -21,4 +21,4 @@ do_real: True
 do_wrf: True
 archive: False
 exp_name: replace
-exp_wrf_only: True
+exp_wrf_only: false

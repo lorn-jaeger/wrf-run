@@ -40,14 +40,14 @@ def setup_fire():
     df = pd.read_csv("./wsts/fires.csv")
 
     config = Path("./configs/base.yaml")
-    template = Path("/templates/base/")
+    template = Path("./templates/base/")
     fires = df.groupby("key")
 
-    for fire_id, group in list(fires)[:1]:
+    for fire_id, group in list(fires):
         fire_config = Path(f"./configs/{fire_id}.yaml")
         fire_template = Path(f"./templates/{fire_id}/")
         fire_wps_template = fire_template / "namelist.wps.hrrr"
-        fire_input_template = fire_template / "namelist.input.hrrr"
+        fire_input_template = fire_template / "namelist.input.hrrr.hybr"
 
         shutil.copy(config, fire_config)
         shutil.copytree(template, fire_template)
@@ -55,6 +55,7 @@ def setup_fire():
         with open(fire_config, "r") as f:
             fire_config_yaml = yaml.safe_load(f)
 
+        fire_config_yaml["template_dir"] = f"/glade/u//home/ljaeger/wrf-run/templates/WRF_1Dom1km/{fire_id}"
         fire_config_yaml["exp_name"] = fire_id
 
         with open(fire_config, "w") as f:
@@ -76,7 +77,6 @@ def setup_fire():
         fire_input_template.rename(name)
 
         print(f"Setup complete for fire: {fire_id}")
-        break  # Only runs the first fire as in your original code
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process fire YAMLs and generate configs.")
