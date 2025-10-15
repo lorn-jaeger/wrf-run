@@ -6,9 +6,9 @@ import csv
 directory = Path("./configs/")
 
 # Open CSV once and write the header
-with open("output.csv", "w", newline="") as csvfile:
+with open("output_wcommand.csv", "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
-    writer.writerow(["key", "latitude", "longitude", "current", "sim_start", "start", "end"])
+    writer.writerow(["key", "latitude", "longitude", "current", "sim_start", "start", "end", "command"])
 
     # Loop through all YAML files
     for file_path in directory.glob("*.yml"):
@@ -26,6 +26,7 @@ with open("output.csv", "w", newline="") as csvfile:
 
                 while current <= end:
                     sim_start = (datetime.combine(current, datetime.min.time()) - timedelta(hours=6)).strftime("%Y%m%d_%H")
-                    writer.writerow([key, lat, lon, current, sim_start, start, end])
+                    command = f"./setup_wps_wrf.py -b {sim_start} -c configs/{key}.yaml"
+                    writer.writerow([key, lat, lon, current, sim_start, start, end, command])
                     current += timedelta(days=1)
 

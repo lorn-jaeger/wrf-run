@@ -21,4 +21,4 @@ do_real: true
 do_wrf: true
 archive: false
 exp_name: fire_21458798
-exp_wrf_only: true
+exp_wrf_only: false

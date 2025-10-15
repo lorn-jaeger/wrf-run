@@ -145,11 +145,10 @@ ls wrfout_d01_2020-08-* | wc -l
 31
 ```
 
-Should be 30
+Should be 30?
 
 Setting 30 hours of simulation runs 31 hours, but the script only builds 30 hours of input, hence the crash. Fortunatley we still get all the data we need. I have to look through the configs and code to see where the mismatch is. Hopefully I can either patch it or call the script in a different way so that it is no longer an issue. 
 
-
-
+Might be thinking of the output files wrong. Are they snapshots of the simulation in time or the average value over the interval of an hour? From here https://yidongwonyi.wordpress.com/models/wrf-weather-research-and-forecasting/is-wrfout-written-in-snapshot-or-average-value/ it looks like they are snapshots. It also mentions setting a diagnostic
 
 
