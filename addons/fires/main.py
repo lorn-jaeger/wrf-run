@@ -2,11 +2,15 @@ from pathlib import Path
 import yaml
 from datetime import datetime, timedelta
 import csv
+import shutil
+import re
+import pandas as pd
 
-directory = Path("./configs/")
+
+directory = Path("./wsts/")
 
 # Open CSV once and write the header
-with open("output_wcommand.csv", "w", newline="") as csvfile:
+with open("./wsts/fires.csv", "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow(["key", "latitude", "longitude", "current", "sim_start", "start", "end", "command"])
 
@@ -30,55 +34,53 @@ with open("output_wcommand.csv", "w", newline="") as csvfile:
                     writer.writerow([key, lat, lon, current, sim_start, start, end, command])
                     current += timedelta(days=1)
 
-import pandas as pd
-from pathlib import Path
-import shutil
-import yaml
-import re
 
-# Paths
-df = pd.read_csv("./fires/output.csv")
-wps_template = Path("./namelist.wps.hrrr")
-input_template = Path("./namelist.input.hrrr")
-config_template = Path("./wps_wrf_config.yaml")
+
+df = pd.read_csv("./wsts/fires.csv")
+
+config = Path("./configs/base.yaml")
+template = Path("/templates/base/")
 
 fires = df.groupby("key")
 
 for fire_id, group in list(fires)[:1]:
-    print(group.iloc[0])
+    # move all the files around to the correct spots
+
+    fire_config = Path(f"./configs/{fire_id}.yaml")
+
+    fire_template = Path(f"./templates/{fire_id}/")
+    fire_wps_template = fire_template / "namelist.wps.hrrr"
+    fire_input_template = fire_template / "namelist.input.hrrr"
+
+    shutil.copy(config, fire_config)
+    shutil.copytree(template, fire_template)
+
+    # edit the config 
+
+    with open(fire_config, "r") as f:
+        fire_config_yaml = yaml.safe_load(f)
+
+    fire_config_yaml["exp_name"] = fire_id
+
+    with open(fire_config, "w") as f:
+        yaml.dump(fire_config_yaml, f, sort_keys=False)
+
+    # edit the wps namelist 
+
+    text = fire_wps_template.read_text()
+
     lat = round(group.iloc[0]["latitude"], 4)
     lon = round(group.iloc[0]["longitude"], 4)
 
-    print(f"Generating templates for {fire_id} ({lat:.4f}, {lon:.4f})")
+    text = re.sub(r"ref_lat\s*=\s*[\d\.\-]+", f"ref_lat   =  {lat}", text)
+    text = re.sub(r"ref_lon\s*=\s*[\d\.\-]+", f"ref_lon   =  {lon}", text)
+    text = re.sub(r"truelat1\s*=\s*[\d\.\-]+", f"truelat1  =  {lat}", text)
+    text = re.sub(r"truelat2\s*=\s*[\d\.\-]+", f"truelat2  =  {lat}", text)
+    text = re.sub(r"stand_lon\s*=\s*[\d\.\-]+", f"stand_lon =  {lon}", text)
 
-    # --- 1. namelist.wps.hrrr.fire_id ---
-    wps_text = wps_template.read_text()
+    fire_wps_template.write_text(text)
 
-    # Replace all float-looking lat/lon values with the new ones
-    # Assuming consistent formatting like ref_lat, ref_lon, truelat1, etc.
-    wps_text = re.sub(r"ref_lat\s*=\s*[\d\.\-]+", f"ref_lat   =  {lat}", wps_text)
-    wps_text = re.sub(r"ref_lon\s*=\s*[\d\.\-]+", f"ref_lon   =  {lon}", wps_text)
-    wps_text = re.sub(r"truelat1\s*=\s*[\d\.\-]+", f"truelat1  =  {lat}", wps_text)
-    wps_text = re.sub(r"truelat2\s*=\s*[\d\.\-]+", f"truelat2  =  {lat}", wps_text)
-    wps_text = re.sub(r"stand_lon\s*=\s*[\d\.\-]+", f"stand_lon =  {lon}", wps_text)
-
-    wps_out = Path(f"./namelist.wps.hrrr.{fire_id}")
-    wps_out.write_text(wps_text)
-
-    # --- 2. namelist.input.hrrr.fire_id ---
-    input_out = Path(f"./namelist.input.hrrr.{fire_id}")
-    shutil.copy(input_template, input_out)
-
-    # --- 3. fire_id.yml ---
-    with open(config_template, "r") as f:
-        config = yaml.safe_load(f)
-
-    config["exp_name"] = fire_id  # replace experiment name
-
-    config_out = Path(f"./{fire_id}.yml")
-    with open(config_out, "w") as f:
-        yaml.dump(config, f, sort_keys=False)
-
-print("✅ All template files generated.")
-
-
+    # rename the input namelist
+    
+    name = fire_input_template.with_suffix(f".{fire_id}")
+    fire_input_template.rename(name)
