@@ -44,6 +44,11 @@ def setup_fire():
     fires = df.groupby("key")
 
     for fire_id, group in list(fires):
+        # --------------------------------------------------
+        # copy base configs and templates to over to run
+        # specific configs and templates
+        # --------------------------------------------------
+
         fire_config = Path(f"./configs/{fire_id}.yaml")
         fire_template = Path(f"./templates/{fire_id}/")
         fire_wps_template = fire_template / "namelist.wps.hrrr"
@@ -52,11 +57,22 @@ def setup_fire():
         shutil.copy(config, fire_config)
         shutil.copytree(template, fire_template)
 
+        # --------------------------------------------------
+        # modify config so that each run gets it's own
+        # directories for wrf and wps and hrrr
+        # --------------------------------------------------
+
         with open(fire_config, "r") as f:
             fire_config_yaml = yaml.safe_load(f)
 
-        fire_config_yaml["template_dir"] = f"/glade/u//home/ljaeger/wrf-run/templates/WRF_1Dom1km/{fire_id}"
-        fire_config_yaml["exp_name"] = fire_id
+        fire_config_yaml["template_dir"] = f"/glade/u//home/ljaeger/wrf-run/templates/{fire_id}"
+        fire_config_yaml["wps_ins_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wps"
+        fire_config_yaml["wrf_ins_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wrf"
+        fire_config_yaml["grib_dir"] = f"/glade/derecho/scratch/ljaeger/data/hrrr/{fire_id}"
+
+        # -------------------------------------------------
+        # write fire latitude and longitude to wps namelist
+        # -------------------------------------------------
 
         with open(fire_config, "w") as f:
             yaml.dump(fire_config_yaml, f, sort_keys=False)
@@ -72,9 +88,6 @@ def setup_fire():
         text = re.sub(r"stand_lon\s*=\s*[\d\.\-]+", f"stand_lon =  {lon}", text)
 
         fire_wps_template.write_text(text)
-
-        name = fire_input_template.with_suffix(f".{fire_id}")
-        fire_input_template.rename(name)
 
         print(f"Setup complete for fire: {fire_id}")
 
