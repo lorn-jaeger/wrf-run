@@ -66,8 +66,8 @@ def setup_fire():
             fire_config_yaml = yaml.safe_load(f)
 
         fire_config_yaml["template_dir"] = f"/glade/u//home/ljaeger/wrf-run/templates/{fire_id}"
-        fire_config_yaml["wps_ins_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wps"
-        fire_config_yaml["wrf_ins_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wrf"
+        fire_config_yaml["wps_run_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wps"
+        fire_config_yaml["wrf_run_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wrf"
         fire_config_yaml["grib_dir"] = f"/glade/derecho/scratch/ljaeger/data/hrrr/{fire_id}"
 
         # -------------------------------------------------
@@ -86,6 +86,8 @@ def setup_fire():
         text = re.sub(r"truelat1\s*=\s*[\d\.\-]+", f"truelat1  =  {lat}", text)
         text = re.sub(r"truelat2\s*=\s*[\d\.\-]+", f"truelat2  =  {lat}", text)
         text = re.sub(r"stand_lon\s*=\s*[\d\.\-]+", f"stand_lon =  {lon}", text)
+
+        text = text.replace("UM_WRF_1Dom1km", fire_id)
 
         fire_wps_template.write_text(text)
 

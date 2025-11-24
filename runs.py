@@ -6,8 +6,10 @@ import pandas as pd
 import subprocess
 from pathlib import Path
 
-df = pd.read_csv("runs.csv").head(10)
-Path("logs").mkdir(exist_ok=True)
+df = pd.read_csv("example_runs.csv")
+
+logpath = Path("logs")
+logpath.mkdir(exist_ok=True)
 
 procs = []
 

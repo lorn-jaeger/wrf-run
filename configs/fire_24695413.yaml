@@ -1,10 +1,10 @@
 sim_hrs: 30
-template_dir: /glade/u//home/ljaeger/wrf-run/templates/WRF_1Dom1km/fire_24695413
+template_dir: /glade/u//home/ljaeger/wrf-run/templates/fire_24695413
 wps_ins_dir: /glade/u/home/ljaeger/wrf-run/bin/WPS-4.6-dmpar-casper
 wrf_ins_dir: /glade/u/home/ljaeger/wrf-run/bin/WRF-4.6
-wps_run_dir: /glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wps
-wrf_run_dir: /glade/derecho/scratch/ljaeger/workflow/UM_WRF_1Dom1km/wrf
-grib_dir: /glade/derecho/scratch/ljaeger/data/hrrr
+wps_run_dir: /glade/derecho/scratch/ljaeger/workflow/fire_24695413/wps
+wrf_run_dir: /glade/derecho/scratch/ljaeger/workflow/fire_24695413/wrf
+grib_dir: /glade/derecho/scratch/ljaeger/data/hrrr/fire_24695413
 ungrib_domain: full
 icbc_model: HRRR
 icbc_source: AWS
@@ -20,5 +20,3 @@ do_metgrid: true
 do_real: true
 do_wrf: true
 archive: false
-exp_name: fire_24695413
-exp_wrf_only: false

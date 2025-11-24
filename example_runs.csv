@@ -1,0 +1,3 @@
+key,latitude,longitude,current,sim_start,start,end,command
+fire_21458836,35.62481817088222,-119.25451246676369,2018-01-02,20180101_18,2018-01-02,2018-01-28,./setup_wps_wrf.py -b 20180101_18 -c configs/fire_21458836.yaml
+
