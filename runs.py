@@ -6,7 +6,8 @@ import pandas as pd
 import subprocess
 from pathlib import Path
 
-df = pd.read_csv("example_runs.csv")
+df = pd.read_csv("runs.csv")
+df = df[df["key"] == "fire_23301095"]
 
 logpath = Path("logs")
 logpath.mkdir(exist_ok=True)
