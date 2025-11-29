@@ -1,0 +1,3 @@
+[submodule "wps_wrf_workflow"]
+	path = wps_wrf_workflow
+	url = https://github.com/NCAR/wps_wrf_workflow.git
