@@ -17,6 +17,7 @@ import pathlib
 import glob
 import time
 import datetime as dt
+import math
 import pandas as pd
 import logging
 
@@ -100,9 +101,26 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
     fmt_wrf_dt = '%Y-%m-%d_%H:%M:%S'
     fmt_wrf_date_hh = '%Y-%m-%d_%H'
 
+    nml_tmp_path = tmp_dir.joinpath(nml_tmp)
+    if not nml_tmp_path.is_file():
+        log.error(f'ERROR! Namelist template {nml_tmp_path} not found. Exiting!')
+        sys.exit(1)
+
+    interval_seconds = 3600
+    with open(nml_tmp_path, 'r') as template_file:
+        for line in template_file:
+            if line.strip().startswith('interval_seconds'):
+                try:
+                    interval_seconds = int(line.split('=')[1].split(',')[0].strip())
+                except ValueError:
+                    log.warning('WARNING: Unable to parse interval_seconds from namelist; defaulting to 3600.')
+                    interval_seconds = 3600
+                break
+    interval_hours = max(1, math.ceil(interval_seconds / 3600))
+
     cycle_dt = pd.to_datetime(cycle_dt_beg, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
-    end_dt = beg_dt + dt.timedelta(hours=sim_hrs)
+    end_dt = beg_dt + dt.timedelta(hours=sim_hrs) + dt.timedelta(seconds=interval_seconds)
 
     beg_dt_wrf = beg_dt.strftime(fmt_wrf_dt)
     end_dt_wrf = end_dt.strftime(fmt_wrf_dt)
@@ -145,13 +163,14 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
         shutil.copy(tmp_dir.joinpath('submit_real.bash'), 'submit_real.bash')
 
     ## Copy over the default namelist
-    shutil.copy(tmp_dir.joinpath(nml_tmp), 'namelist.input.template')
+    shutil.copy(nml_tmp_path, 'namelist.input.template')
 
     ## Modify the namelist for this date and simulation length
     with open('namelist.input.template', 'r') as in_file, open('namelist.input', 'w') as out_file:
         for line in in_file:
             if line.strip()[0:9] == 'run_hours':
-                out_file.write(' run_hours                = '+str(sim_hrs)+',\n')
+                run_hours_total = sim_hrs + interval_hours
+                out_file.write(' run_hours                = '+str(run_hours_total)+',\n')
             elif line.strip()[0:10] == 'start_year':
                 out_file.write(' start_year               = '+str(beg_yr)+', '+str(beg_yr)+', '+str(beg_yr)+',\n')
             elif line.strip()[0:11] == 'start_month':
