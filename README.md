@@ -1,5 +1,9 @@
+
+## WIP Have to update with other code
+
+
 > [!NOTE]
-> Documentation of the steps I followed to set up wps_wrf_workflow both for me and for anyone helping me debug this.
+> Documentation of the steps I followed to set up wps_wrf_workflow both for me and for anyone helping me debug this. Kind of no longer relevant so just ignore. 
 
 
 ### Obtaining Code
