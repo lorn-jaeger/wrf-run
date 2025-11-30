@@ -15,6 +15,9 @@ import argparse
 import pathlib
 import datetime as dt
 from urllib.error import HTTPError
+from dataclasses import dataclass
+from typing import Dict, List
+import shutil
 import numpy as np
 import pandas as pd
 import wget
@@ -30,6 +33,13 @@ long_time = 5
 long_long_time = 15
 short_time = 3
 curr_dir=os.path.dirname(os.path.abspath(__file__))
+
+@dataclass
+class MissingFileRecord:
+    tag: str
+    valid_time: pd.Timestamp
+    destination: pathlib.Path
+    label: str
 
 def parse_args():
     ## Parse the command-line arguments
@@ -136,6 +146,12 @@ def main(cycle_dt_str, sim_hrs, out_dir_parent, icbc_fc_dt, now_time_beg, interv
     aws_dir_base = 'https://noaa-hrrr-bdp-pds.s3.amazonaws.com'
     gc_dir_base = 'https://storage.googleapis.com/high-resolution-rapid-refresh'
 
+    available_files: Dict[str, Dict[pd.Timestamp, pathlib.Path]] = {
+        'wrfprsf': {},
+        'wrfnatf': {},
+    }
+    missing_records: List[MissingFileRecord] = []
+
     # Loop over lead times
     if not icbc_analysis:
         if icbc_source in variants_aws:
@@ -149,38 +165,38 @@ def main(cycle_dt_str, sim_hrs, out_dir_parent, icbc_fc_dt, now_time_beg, interv
         os.chdir(out_dir)
 
         for ll in range(n_leads):
-            this_lead = str(leads[ll]).zfill(2)
+            lead_value = int(leads[ll])
+            this_lead = str(lead_value).zfill(2)
+            valid_dt = cycle_dt + dt.timedelta(hours=lead_value)
 
             # Download HRRR native-grid files if specified (atmosphere-only, no soil data)
             if native_grid:
                 fname = 'hrrr.t' + cycle_hour + 'z.wrfnatf' + this_lead + '.grib2'
                 url = host_dir+'/'+fname
-
-                if not out_dir.joinpath(fname).is_file():
-                    log.info('Downloading '+url)
-                    try:
-                        wget.download(url)
-                        log.info('')
-                    except HTTPError:
-                        err_msg = 'HTTP Error 404: Not Found: ' + url
-                        wget_error(str(err_msg), now_time_beg)
-                else:
-                    log.info('   File '+fname+' already exists locally. Not downloading again from server.')
+                dest = out_dir.joinpath(fname)
+                download_or_queue_file(
+                    url=url,
+                    dest=dest,
+                    tag='wrfnatf',
+                    valid_time=valid_dt,
+                    label=f'lead f{this_lead}',
+                    available_files=available_files,
+                    missing_records=missing_records,
+                )
 
             # Download HRRR pressure-level files no matter what (atmosphere + soil)
             fname = 'hrrr.t' + cycle_hour + 'z.wrfprsf' + this_lead + '.grib2'
             url = host_dir+'/'+fname
-
-            if not out_dir.joinpath(fname).is_file():
-                log.info('Downloading '+url)
-                try:
-                    wget.download(url)
-                    log.info('')
-                except HTTPError:
-                    err_msg = 'HTTP Error 404: Not Found: ' + url
-                    wget_error(str(err_msg), now_time_beg)
-            else:
-                log.info('   File '+fname+' already exists locally. Not downloading again from server.')
+            dest = out_dir.joinpath(fname)
+            download_or_queue_file(
+                url=url,
+                dest=dest,
+                tag='wrfprsf',
+                valid_time=valid_dt,
+                label=f'lead f{this_lead}',
+                available_files=available_files,
+                missing_records=missing_records,
+            )
     else:
         # icbc_analysis = True, so loop through valid times of the simulation for f00 files
         for vv in range(n_valid):
@@ -203,31 +219,144 @@ def main(cycle_dt_str, sim_hrs, out_dir_parent, icbc_fc_dt, now_time_beg, interv
                 fname = 'hrrr.t' + valid_hour + 'z.wrfnatf00.grib2'
                 url = host_dir + '/' + fname
 
-                if not out_dir.joinpath(fname).is_file():
-                    log.info('Downloading ' + url)
-                    try:
-                        wget.download(url)
-                        log.info('')
-                    except HTTPError:
-                        err_msg = 'HTTP Error 404: Not Found: ' + url
-                        wget_error(str(err_msg), now_time_beg)
-                else:
-                    log.info('   File ' + fname + ' already exists locally. Not downloading again from server.')
+                dest = out_dir.joinpath(fname)
+                download_or_queue_file(
+                    url=url,
+                    dest=dest,
+                    tag='wrfnatf',
+                    valid_time=this_valid_dt,
+                    label=f'valid {valid_date}_{valid_hour}',
+                    available_files=available_files,
+                    missing_records=missing_records,
+                )
 
             # Download HRRR pressure-level files no matter what (atmosphere + soil)
             fname = 'hrrr.t' + valid_hour + 'z.wrfprsf00.grib2'
             url = host_dir + '/' + fname
+            dest = out_dir.joinpath(fname)
+            download_or_queue_file(
+                url=url,
+                dest=dest,
+                tag='wrfprsf',
+                valid_time=this_valid_dt,
+                label=f'valid {valid_date}_{valid_hour}',
+                available_files=available_files,
+                missing_records=missing_records,
+            )
 
-            if not out_dir.joinpath(fname).is_file():
-                log.info('Downloading ' + url)
-                try:
-                    wget.download(url)
-                    log.info('')
-                except HTTPError:
-                    err_msg = 'HTTP Error 404: Not Found: ' + url
-                    wget_error(str(err_msg), now_time_beg)
-            else:
-                log.info('   File ' + fname + ' already exists locally. Not downloading again from server.')
+    interpolate_missing_files(available_files, missing_records, log)
+
+
+def download_or_queue_file(url, dest, tag, valid_time, label, available_files, missing_records):
+    if dest.is_file():
+        log.info(f'   File {dest.name} already exists locally. Not downloading again from server.')
+        record_available_file(available_files, tag, valid_time, dest)
+        return
+
+    log.info('Downloading ' + url)
+    try:
+        wget.download(url)
+        log.info('')
+        record_available_file(available_files, tag, valid_time, dest)
+    except HTTPError as exc:
+        log.warning(f'HTTP error while downloading {url}: {exc}. Marking for interpolation.')
+        missing_records.append(MissingFileRecord(tag=tag, valid_time=valid_time, destination=dest, label=label))
+
+
+def record_available_file(available_files, tag, valid_time, path):
+    available_files.setdefault(tag, {})[valid_time] = path
+
+
+def interpolate_missing_files(available_files, missing_records, logger):
+    if not missing_records:
+        return
+
+    logger.info(f'Attempting to interpolate {len(missing_records)} missing HRRR files.')
+    unresolved = []
+
+    for record in missing_records:
+        success = interpolate_single_file(available_files, record, logger)
+        if success:
+            record_available_file(available_files, record.tag, record.valid_time, record.destination)
+        else:
+            unresolved.append(record)
+
+    if unresolved:
+        for record in unresolved:
+            logger.error(f'Unable to interpolate missing file {record.destination} ({record.label}).')
+        logger.error('Interpolation failed for some files. Exiting!')
+        sys.exit(1)
+
+
+def interpolate_single_file(available_files, record, logger):
+    available_map = available_files.get(record.tag, {})
+    if not available_map:
+        logger.error(f'No available files of type {record.tag} to interpolate {record.destination}.')
+        return False
+
+    sorted_times = sorted(available_map.keys())
+    prev_time = max((ts for ts in sorted_times if ts < record.valid_time), default=None)
+    next_time = min((ts for ts in sorted_times if ts > record.valid_time), default=None)
+
+    record.destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if prev_time is None and next_time is None:
+        logger.error(f'No neighboring files exist to interpolate {record.destination}.')
+        return False
+    if prev_time is None:
+        shutil.copy2(available_map[next_time], record.destination)
+        logger.warning(f'Copied {available_map[next_time].name} to fill missing {record.destination.name} (no earlier neighbor).')
+        return True
+    if next_time is None:
+        shutil.copy2(available_map[prev_time], record.destination)
+        logger.warning(f'Copied {available_map[prev_time].name} to fill missing {record.destination.name} (no later neighbor).')
+        return True
+
+    prev_file = available_map[prev_time]
+    next_file = available_map[next_time]
+    total_seconds = (next_time - prev_time).total_seconds()
+    if total_seconds <= 0:
+        shutil.copy2(prev_file, record.destination)
+        logger.warning(f'Duplicate timestamps detected. Copied {prev_file.name} to {record.destination.name}.')
+        return True
+
+    weight_prev = (next_time - record.valid_time).total_seconds() / total_seconds
+    weight_next = 1.0 - weight_prev
+    logger.info(
+        f'Interpolating {record.destination.name} between {prev_file.name} and {next_file.name} '
+        f'with weights {weight_prev:.2f}/{weight_next:.2f}.'
+    )
+
+    if try_wgrib2_interpolation(prev_file, next_file, record.destination, weight_prev, weight_next, logger):
+        return True
+
+    fallback = prev_file if weight_prev >= weight_next else next_file
+    shutil.copy2(fallback, record.destination)
+    logger.warning(
+        f'wgrib2 interpolation unavailable; copied {fallback.name} to approximate {record.destination.name}.'
+    )
+    return True
+
+
+def try_wgrib2_interpolation(prev_file, next_file, target_file, weight_prev, weight_next, logger):
+    wgrib2_exe = shutil.which('wgrib2')
+    if not wgrib2_exe:
+        logger.debug('wgrib2 not found on PATH; skipping interpolation command.')
+        return False
+
+    cmd = [
+        wgrib2_exe,
+        str(prev_file),
+        '-rpn', f'{weight_prev:.6f} *',
+        '-import_grib', str(next_file),
+        '-rpn', f'{weight_next:.6f} * +',
+        '-grib', str(target_file),
+    ]
+    ret_code, _ = exec_command(cmd, logger, exit_on_fail=False, verbose=False)
+    if ret_code != 0:
+        logger.warning('wgrib2 interpolation command failed.')
+        return False
+    return True
 
 
 if __name__ == '__main__':
