@@ -192,7 +192,17 @@ def summarize_wrf(
             msg += " | qstat unavailable"
         return (msg, 0)
     if count == 1:
-        return ("V_CFL (single wrfout)", count)
+        job_id, last_line = extract_job_info(log_path)
+        if job_id and qstat_jobs.get(job_id):
+            state = qstat_jobs[job_id]
+            msg = f"V_CFL (single wrfout) | retry running (job {job_id}, state {state})"
+        else:
+            msg = "V_CFL (single wrfout)"
+        if last_line and last_line != "log not found":
+            msg += f" | last log: {last_line}"
+        if not qstat_available:
+            msg += " | qstat unavailable"
+        return (msg, count)
     if count in (30, 31):
         return ("SUCCESS", count)
     return (f"UNEXPECTED COUNT ({count})", count)
