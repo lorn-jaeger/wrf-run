@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import deque
 from datetime import datetime, timedelta
+import os
+import re
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
@@ -25,6 +29,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("configs/built/workflow"),
         help="Directory containing per-fire workflow YAML configs.",
+    )
+    parser.add_argument(
+        "--logs-dir",
+        type=Path,
+        default=Path("logs/budget_runs"),
+        help="Directory containing workflow log files (default: logs/budget_runs).",
     )
     parser.add_argument(
         "--day-index",
@@ -114,13 +124,73 @@ def check_ungrib(paths: Sequence[Tuple[str, Path]]) -> Tuple[bool, List[Tuple[st
     return ok, reports
 
 
-def summarize_wrf(fire_id: str, wrf_cycle_dir: Path) -> Tuple[str, int]:
+def fetch_qstat_jobs() -> Tuple[Dict[str, str], bool]:
+    user = os.environ.get("USER")
+    if not user:
+        return {}, False
+    try:
+        result = subprocess.run(
+            ["qstat", "-u", user],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return {}, False
+    jobs: Dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[0].isdigit():
+            jobs[parts[0]] = parts[4]
+    return jobs, True
+
+
+def tail_lines(path: Path, limit: int = 200) -> List[str]:
+    dq: deque[str] = deque(maxlen=limit)
+    with path.open("r") as handle:
+        for line in handle:
+            dq.append(line.rstrip())
+    return list(dq)
+
+
+def extract_job_info(log_path: Path) -> Tuple[str | None, str]:
+    if not log_path.exists():
+        return None, "log not found"
+    tail = tail_lines(log_path, limit=200)
+    job_id = None
+    for line in tail:
+        match = re.search(r"Submitted batch job (\d+)", line)
+        if match:
+            job_id = match.group(1)
+    last_line = tail[-1] if tail else ""
+    return job_id, last_line
+
+
+def summarize_wrf(
+    fire_id: str,
+    wrf_cycle_dir: Path,
+    log_path: Path,
+    qstat_jobs: Dict[str, str],
+    qstat_available: bool,
+) -> Tuple[str, int]:
     if not wrf_cycle_dir.exists():
         return ("MISSING RUN DIR", 0)
     wrfouts = sorted(wrf_cycle_dir.glob("wrfout_d0*"))
     count = len(wrfouts)
     if count == 0:
-        return ("NO WRFOUT FILES", 0)
+        job_id, last_line = extract_job_info(log_path)
+        if job_id and qstat_jobs.get(job_id):
+            state = qstat_jobs[job_id]
+            msg = f"WRF QUEUED/RUNNING (job {job_id}, state {state})"
+        elif job_id:
+            msg = f"WRF JOB SUBMITTED ({job_id}) BUT NO OUTPUT"
+        else:
+            msg = "WRF NOT STARTED (no job submission found)"
+        if last_line and last_line != "log not found":
+            msg += f" | last log: {last_line}"
+        if not qstat_available:
+            msg += " | qstat unavailable"
+        return (msg, 0)
     if count == 1:
         return ("V_CFL (single wrfout)", count)
     if count in (30, 31):
@@ -187,12 +257,16 @@ def main() -> None:
     if not ungrib_ok:
         raise SystemExit("Ungrib outputs missing or empty. Aborting report.")
 
+    qstat_jobs, qstat_available = fetch_qstat_jobs()
+    logs_dir = args.logs_dir
+
     print("\n[FIRES]")
     for row in day_rows:
         fire_id = row["fire_id"]
         cfg = get_cfg(fire_id)
         wrf_dir = Path(cfg["wrf_run_dir"]) / sim_start
-        result, count = summarize_wrf(fire_id, wrf_dir)
+        log_path = logs_dir / f"{fire_id}_{row['date']}.log"
+        result, count = summarize_wrf(fire_id, wrf_dir, log_path, qstat_jobs, qstat_available)
         print(f" {fire_id}: {result} ({count} wrfout files) -> {wrf_dir}")
 
 

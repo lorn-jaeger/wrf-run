@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import shutil
 import shlex
 import subprocess
@@ -43,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="1-based position within the selected day to start running (default: 1).",
+    )
+    parser.add_argument(
+        "--retry-vcfl",
+        action="store_true",
+        help="Only rerun WRF for fires that previously failed with a V_CFL error.",
     )
     parser.add_argument(
         "--workflow-script",
@@ -105,6 +111,43 @@ def compute_sim_start(date_str: str) -> str:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     shifted = dt - timedelta(hours=6)
     return shifted.strftime("%Y%m%d_%H")
+
+
+def detect_namelist_name(template_dir: Path) -> str:
+    default = template_dir / "namelist.input.hrrr.hybr"
+    if default.exists():
+        return default.name
+    candidates = sorted(template_dir.glob("namelist.input*"))
+    if not candidates:
+        raise SystemExit(f"No namelist.input* files found in {template_dir}")
+    return candidates[0].name
+
+
+def _parse_epssm_value(line: str) -> float:
+    match = re.search(r"([-+]?\d*\.?\d+)", line)
+    return float(match.group(1)) if match else 0.1
+
+
+def update_epssm(namelist_path: Path) -> float:
+    if not namelist_path.exists():
+        raise SystemExit(f"Namelist not found: {namelist_path}")
+    lines = namelist_path.read_text().splitlines()
+    for idx, line in enumerate(lines):
+        if "epssm" in line.lower():
+            current = _parse_epssm_value(line)
+            new_value = round(min(current + 0.1, 0.7), 2)
+            lines[idx] = f" epssm                               = {new_value:.1f},   {new_value:.1f},   {new_value:.1f},"
+            namelist_path.write_text("\n".join(lines) + "\n")
+            return new_value
+    insert_idx = next((i for i, line in enumerate(lines) if line.strip().lower().startswith("&dynamics")), None)
+    new_value = 0.2
+    new_line = " epssm                               = 0.2,   0.2,   0.2,"
+    if insert_idx is None:
+        lines.append(new_line)
+    else:
+        lines.insert(insert_idx + 1, new_line)
+    namelist_path.write_text("\n".join(lines) + "\n")
+    return new_value
 
 
 def ensure_ungrib_link(target: Path, source: Path) -> None:
@@ -196,16 +239,53 @@ def main() -> None:
     target_date, day_rows = grouped[args.day_index - 1]
     print(f"Selected day #{args.day_index}: {target_date} ({len(day_rows)} runs)")
 
+    sim_start = compute_sim_start(target_date)
+
+    config_cache: Dict[str, Dict[str, object]] = {}
+
+    def get_config(fire_id: str) -> Dict[str, object]:
+        if fire_id not in config_cache:
+            cfg_path = (args.config_root / f"{fire_id}.yaml").resolve()
+            if not cfg_path.exists():
+                raise SystemExit(f"Config not found for {fire_id}: {cfg_path}")
+            with cfg_path.open("r") as handle:
+                config_cache[fire_id] = yaml.safe_load(handle) or {}
+        return config_cache[fire_id]
+
+    if args.retry_vcfl:
+        run_wrf_script = Path("wps_wrf_workflow/run_wrf.py").resolve()
+        if not run_wrf_script.exists():
+            raise SystemExit(f"run_wrf.py not found: {run_wrf_script}")
+        retry_vcfl(
+            day_rows,
+            sim_start,
+            args.start_fire,
+            run_wrf_script,
+            get_config,
+            args.logs_dir,
+            args.dry_run,
+        )
+        return
+
     args.workflow_script = args.workflow_script.resolve()
     if not args.workflow_script.exists():
         raise SystemExit(f"Workflow script not found: {args.workflow_script}")
     workflow_cwd = args.workflow_script.parent
 
     reference_ungrib: Path | None = None
+    start_idx = max(1, args.start_fire)
+    if start_idx > 1:
+        first_cfg = get_config(day_rows[0]["fire_id"])
+        candidate = (Path(first_cfg["wps_run_dir"]) / sim_start / "ungrib").resolve()
+        if candidate.exists():
+            reference_ungrib = candidate
+        else:
+            raise SystemExit(
+                f"Unable to locate shared ungrib directory {candidate} required for --start-fire={args.start_fire}."
+            )
 
     temp_files: List[Path] = []
     try:
-        start_idx = max(1, args.start_fire)
         if start_idx > len(day_rows):
             print(
                 f"[INFO] --start-fire={args.start_fire} exceeds number of runs ({len(day_rows)}) for {target_date}. Nothing to do."
@@ -217,22 +297,15 @@ def main() -> None:
                 print(f"[SKIP] {row['fire_id']} ({row['date']}) before start-fire={args.start_fire}")
                 continue
             fire_id = row["fire_id"]
-            config_path = (args.config_root / f"{fire_id}.yaml").resolve()
-            if not config_path.exists():
-                raise SystemExit(f"Config not found for {fire_id}: {config_path}")
+            config_data = get_config(fire_id)
 
-            with config_path.open("r") as handle:
-                config_data = yaml.safe_load(handle) or {}
-
-            sim_start = compute_sim_start(row["date"])
             cycle_ungrib_dir = (Path(config_data["wps_run_dir"]) / sim_start / "ungrib").resolve()
             disable_ungrib = reference_ungrib is not None
             if disable_ungrib:
-                if reference_ungrib is None:
-                    raise SystemExit("First run did not establish a shared ungrib directory.")
                 ensure_ungrib_link(cycle_ungrib_dir, reference_ungrib)
+            cfg_path = args.config_root / f"{fire_id}.yaml"
             cmd, cfg_used, temp_path = build_command(
-                args.workflow_script, sim_start, config_path, config_data, disable_ungrib
+                args.workflow_script, sim_start, cfg_path, config_data, disable_ungrib
             )
             if temp_path:
                 temp_files.append(temp_path)
@@ -245,13 +318,76 @@ def main() -> None:
             if reference_ungrib is None:
                 if not cycle_ungrib_dir.exists():
                     raise SystemExit(f"Expected ungrib output missing: {cycle_ungrib_dir}")
-                reference_ungrib = cycle_ungrib_dir.resolve()
+                reference_ungrib = cycle_ungrib_dir
     finally:
         for tmp in temp_files:
             try:
                 tmp.unlink()
             except FileNotFoundError:
                 pass
+
+
+def count_wrfouts(run_dir: Path) -> int:
+    if not run_dir.exists():
+        return 0
+    return len(list(run_dir.glob("wrfout_d0*")))
+
+
+def retry_vcfl(
+    day_rows: Sequence[Dict[str, str]],
+    sim_start: str,
+    start_fire: int,
+    run_wrf_script: Path,
+    get_config,
+    logs_dir: Path,
+    dry_run: bool,
+) -> None:
+    workflow_cwd = run_wrf_script.parent
+    start_idx = max(1, start_fire)
+    for pos, row in enumerate(day_rows, start=1):
+        fire_id = row["fire_id"]
+        if pos < start_idx:
+            print(f"[SKIP] {fire_id} ({row['date']}) before start-fire={start_fire}")
+            continue
+        cfg = get_config(fire_id)
+        wrf_cycle_dir = Path(cfg["wrf_run_dir"]) / sim_start
+        wrfout_count = count_wrfouts(wrf_cycle_dir)
+        if wrfout_count != 1:
+            print(f"[SKIP] {fire_id}: wrfout count = {wrfout_count} (only rerunning V_CFL cases).")
+            continue
+
+        template_dir = Path(cfg["template_dir"])
+        namelist_name = detect_namelist_name(template_dir)
+        namelist_path = template_dir / namelist_name
+        new_eps = update_epssm(namelist_path)
+        print(f"[INFO] {fire_id}: Updated EPSSM to {new_eps:.1f} in {namelist_path}")
+
+        cmd = [
+            sys.executable,
+            str(run_wrf_script),
+            "-b",
+            sim_start,
+            "-s",
+            str(cfg.get("sim_hrs", 24)),
+            "-w",
+            str(cfg["wrf_ins_dir"]),
+            "-r",
+            str(wrf_cycle_dir),
+            "-t",
+            str(template_dir),
+            "-i",
+            cfg.get("icbc_model", "HRRR"),
+            "-n",
+            namelist_name,
+            "-q",
+            "pbs",
+            "-a",
+            "derecho",
+        ]
+        log_path = logs_dir / f"{fire_id}_{row['date']}_retry.log"
+        ret = run_command(cmd, log_path, dry_run, workflow_cwd)
+        if ret != 0:
+            raise SystemExit(ret)
 
 
 if __name__ == "__main__":
