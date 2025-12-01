@@ -205,7 +205,17 @@ def main() -> None:
 
     temp_files: List[Path] = []
     try:
-        for idx, row in enumerate(day_rows):
+        start_idx = max(1, args.start_fire)
+        if start_idx > len(day_rows):
+            print(
+                f"[INFO] --start-fire={args.start_fire} exceeds number of runs ({len(day_rows)}) for {target_date}. Nothing to do."
+            )
+            return
+
+        for pos, row in enumerate(day_rows, start=1):
+            if pos < start_idx:
+                print(f"[SKIP] {row['fire_id']} ({row['date']}) before start-fire={args.start_fire}")
+                continue
             fire_id = row["fire_id"]
             config_path = (args.config_root / f"{fire_id}.yaml").resolve()
             if not config_path.exists():
@@ -216,7 +226,7 @@ def main() -> None:
 
             sim_start = compute_sim_start(row["date"])
             cycle_ungrib_dir = (Path(config_data["wps_run_dir"]) / sim_start / "ungrib").resolve()
-            disable_ungrib = idx > 0
+            disable_ungrib = reference_ungrib is not None
             if disable_ungrib:
                 if reference_ungrib is None:
                     raise SystemExit("First run did not establish a shared ungrib directory.")
@@ -226,7 +236,7 @@ def main() -> None:
             )
             if temp_path:
                 temp_files.append(temp_path)
-            state = "FIRST" if idx == 0 else "SUBSEQUENT (do_ungrib=False)"
+            state = "FIRST" if reference_ungrib is None else "SUBSEQUENT (do_ungrib=False)"
             print(f"[INFO] {row['date']} {fire_id} ({state}) -> {cfg_used}")
             log_path = args.logs_dir / f"{fire_id}_{row['date']}.log"
             ret = run_command(cmd, log_path, args.dry_run, workflow_cwd)
