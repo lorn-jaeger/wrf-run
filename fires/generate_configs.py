@@ -101,7 +101,13 @@ def update_wps_namelist(namelist_path: Path, lat: float, lon: float, fire_id: st
     text = re.sub(r"truelat1\s*=\s*[-\d\.]+", f"truelat1  =  {lat_str}", text)
     text = re.sub(r"truelat2\s*=\s*[-\d\.]+", f"truelat2  =  {lat_str}", text)
     text = re.sub(r"stand_lon\s*=\s*[-\d\.]+", f"stand_lon =  {lon_str}", text)
-    text = text.replace("UM_WRF_1Dom1km", fire_id)
+    for keyword in ("opt_output_from_geogrid_path", "opt_output_from_metgrid_path"):
+        text = re.sub(
+            rf"(?m)^(.*{keyword}.*)$",
+            lambda match: match.group(0).replace("UM_WRF_1Dom1km", fire_id),
+            text,
+            count=1,
+        )
 
     namelist_path.write_text(text)
 
@@ -132,7 +138,7 @@ def render_workflow_config(
     cfg["template_dir"] = str(template_dir.resolve())
     cfg["wps_run_dir"] = str((workflow_root / fire_id / "wps").as_posix())
     cfg["wrf_run_dir"] = str((workflow_root / fire_id / "wrf").as_posix())
-    cfg["grib_dir"] = str((grib_root / fire_id).as_posix())
+    cfg["grib_dir"] = str(grib_root.as_posix())
     return cfg
 
 

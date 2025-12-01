@@ -68,7 +68,7 @@ def setup_fire():
         fire_config_yaml["template_dir"] = f"/glade/u//home/ljaeger/wrf-run/templates/{fire_id}"
         fire_config_yaml["wps_run_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wps"
         fire_config_yaml["wrf_run_dir"] = f"/glade/derecho/scratch/ljaeger/workflow/{fire_id}/wrf"
-        fire_config_yaml["grib_dir"] = f"/glade/derecho/scratch/ljaeger/data/hrrr/{fire_id}"
+        fire_config_yaml["grib_dir"] = "/glade/derecho/scratch/ljaeger/data/hrrr"
 
         # -------------------------------------------------
         # write fire latitude and longitude to wps namelist
@@ -87,7 +87,13 @@ def setup_fire():
         text = re.sub(r"truelat2\s*=\s*[\d\.\-]+", f"truelat2  =  {lat}", text)
         text = re.sub(r"stand_lon\s*=\s*[\d\.\-]+", f"stand_lon =  {lon}", text)
 
-        text = text.replace("UM_WRF_1Dom1km", fire_id)
+        for keyword in ("opt_output_from_geogrid_path", "opt_output_from_metgrid_path"):
+            text = re.sub(
+                rf"(?m)^(.*{keyword}.*)$",
+                lambda match: match.group(0).replace("UM_WRF_1Dom1km", fire_id),
+                text,
+                count=1,
+            )
 
         fire_wps_template.write_text(text)
 
