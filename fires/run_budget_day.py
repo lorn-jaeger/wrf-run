@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import shutil
 import shlex
 import subprocess
 import sys
@@ -36,6 +37,12 @@ def parse_args() -> argparse.Namespace:
         "--list-days",
         action="store_true",
         help="List available days with their index and exit.",
+    )
+    parser.add_argument(
+        "--start-fire",
+        type=int,
+        default=1,
+        help="1-based position within the selected day to start running (default: 1).",
     )
     parser.add_argument(
         "--workflow-script",
@@ -100,21 +107,40 @@ def compute_sim_start(date_str: str) -> str:
     return shifted.strftime("%Y%m%d_%H")
 
 
+def ensure_ungrib_link(target: Path, source: Path) -> None:
+    if not source.exists():
+        raise SystemExit(f"Shared ungrib directory not found: {source}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target.is_symlink():
+        try:
+            if target.resolve() == source.resolve():
+                return
+        except FileNotFoundError:
+            pass
+        if target.is_symlink() or target.is_file():
+            target.unlink()
+        else:
+            shutil.rmtree(target)
+    target.symlink_to(source, target_is_directory=True)
+
+
 def build_command(
-    workflow_script: Path, sim_start: str, config_path: Path, disable_ungrib: bool
+    workflow_script: Path,
+    sim_start: str,
+    config_path: Path,
+    config_data: Dict[str, object],
+    disable_ungrib: bool,
 ) -> Tuple[List[str], Path, Path | None]:
     cfg_path = config_path
     temp_path: Path | None = None
-    if disable_ungrib:
-        with config_path.open("r") as handle:
-            config_data = yaml.safe_load(handle) or {}
-        if config_data.get("do_ungrib"):
-            config_data["do_ungrib"] = False
-            temp = tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False)
-            with temp:
-                yaml.safe_dump(config_data, temp, sort_keys=False)
-            cfg_path = Path(temp.name)
-            temp_path = cfg_path
+    if disable_ungrib and config_data.get("do_ungrib"):
+        patched = dict(config_data)
+        patched["do_ungrib"] = False
+        temp = tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False)
+        with temp:
+            yaml.safe_dump(patched, temp, sort_keys=False)
+        cfg_path = Path(temp.name)
+        temp_path = cfg_path
     cmd = [
         sys.executable,
         str(workflow_script),
@@ -175,6 +201,8 @@ def main() -> None:
         raise SystemExit(f"Workflow script not found: {args.workflow_script}")
     workflow_cwd = args.workflow_script.parent
 
+    reference_ungrib: Path | None = None
+
     temp_files: List[Path] = []
     try:
         for idx, row in enumerate(day_rows):
@@ -183,10 +211,18 @@ def main() -> None:
             if not config_path.exists():
                 raise SystemExit(f"Config not found for {fire_id}: {config_path}")
 
+            with config_path.open("r") as handle:
+                config_data = yaml.safe_load(handle) or {}
+
             sim_start = compute_sim_start(row["date"])
+            cycle_ungrib_dir = (Path(config_data["wps_run_dir"]) / sim_start / "ungrib").resolve()
             disable_ungrib = idx > 0
+            if disable_ungrib:
+                if reference_ungrib is None:
+                    raise SystemExit("First run did not establish a shared ungrib directory.")
+                ensure_ungrib_link(cycle_ungrib_dir, reference_ungrib)
             cmd, cfg_used, temp_path = build_command(
-                args.workflow_script, sim_start, config_path, disable_ungrib
+                args.workflow_script, sim_start, config_path, config_data, disable_ungrib
             )
             if temp_path:
                 temp_files.append(temp_path)
@@ -196,6 +232,10 @@ def main() -> None:
             ret = run_command(cmd, log_path, args.dry_run, workflow_cwd)
             if ret != 0:
                 raise SystemExit(ret)
+            if reference_ungrib is None:
+                if not cycle_ungrib_dir.exists():
+                    raise SystemExit(f"Expected ungrib output missing: {cycle_ungrib_dir}")
+                reference_ungrib = cycle_ungrib_dir.resolve()
     finally:
         for tmp in temp_files:
             try:
