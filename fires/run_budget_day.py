@@ -344,6 +344,7 @@ def retry_vcfl(
 ) -> None:
     workflow_cwd = run_wrf_script.parent
     start_idx = max(1, start_fire)
+    qstat_jobs, qstat_available = fetch_qstat_jobs()
     for pos, row in enumerate(day_rows, start=1):
         fire_id = row["fire_id"]
         if pos < start_idx:
@@ -351,6 +352,11 @@ def retry_vcfl(
             continue
         cfg = get_config(fire_id)
         wrf_cycle_dir = Path(cfg["wrf_run_dir"]) / sim_start
+        log_path = logs_dir / f"{fire_id}_{row['date']}_retry.log"
+        job_id, _ = extract_job_info(log_path)
+        if job_id and qstat_available and job_id in qstat_jobs:
+            print(f"[SKIP] {fire_id}: job {job_id} currently {qstat_jobs[job_id]} (retry running).")
+            continue
         wrfout_count = count_wrfouts(wrf_cycle_dir)
         if wrfout_count != 1:
             print(f"[SKIP] {fire_id}: wrfout count = {wrfout_count} (only rerunning V_CFL cases).")
@@ -388,6 +394,51 @@ def retry_vcfl(
         ret = run_command(cmd, log_path, dry_run, workflow_cwd)
         if ret != 0:
             raise SystemExit(ret)
+
+
+def fetch_qstat_jobs() -> Tuple[Dict[str, str], bool]:
+    user = os.environ.get("USER")
+    if not user:
+        return {}, False
+    try:
+        result = subprocess.run(
+            ["qstat", "-u", user],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return {}, False
+    jobs: Dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 5:
+            job_token = parts[0]
+            match = re.match(r"(\d+)", job_token)
+            if match:
+                jobs[match.group(1)] = parts[4]
+    return jobs, True
+
+
+def tail_lines(path: Path, limit: int = 200) -> List[str]:
+    dq: deque[str] = deque(maxlen=limit)
+    with path.open("r") as handle:
+        for line in handle:
+            dq.append(line.rstrip())
+    return list(dq)
+
+
+def extract_job_info(log_path: Path) -> Tuple[str | None, str]:
+    if not log_path.exists():
+        return None, "log not found"
+    tail = tail_lines(log_path, limit=200)
+    job_id = None
+    for line in tail:
+        match = re.search(r"Submitted batch job (\d+)", line)
+        if match:
+            job_id = match.group(1)
+    last_line = tail[-1] if tail else ""
+    return job_id, last_line
 
 
 if __name__ == "__main__":

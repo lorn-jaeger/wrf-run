@@ -140,8 +140,14 @@ def fetch_qstat_jobs() -> Tuple[Dict[str, str], bool]:
     jobs: Dict[str, str] = {}
     for line in result.stdout.splitlines():
         parts = line.split()
-        if len(parts) >= 5 and parts[0].isdigit():
-            jobs[parts[0]] = parts[4]
+        if len(parts) >= 5:
+            match = re.match(r"(\d+)", parts[0])
+            if match:
+                job_id = match.group(1)
+                # PBS output includes Jobname in column 3, state in column 4 (0-based index 4)
+                job_name = parts[3]
+                state = parts[4]
+                jobs[job_id] = f"{job_name}:{state}"
     return jobs, True
 
 
@@ -169,7 +175,7 @@ def extract_job_info(log_path: Path) -> Tuple[str | None, str]:
 def summarize_wrf(
     fire_id: str,
     wrf_cycle_dir: Path,
-    log_path: Path,
+    log_paths: Sequence[Path],
     qstat_jobs: Dict[str, str],
     qstat_available: bool,
 ) -> Tuple[str, int]:
@@ -177,29 +183,34 @@ def summarize_wrf(
         return ("MISSING RUN DIR", 0)
     wrfouts = sorted(wrf_cycle_dir.glob("wrfout_d0*"))
     count = len(wrfouts)
-    if count == 0:
+    job_messages: List[str] = []
+    last_log_line = ""
+    for log_path in log_paths:
         job_id, last_line = extract_job_info(log_path)
-        if job_id and qstat_jobs.get(job_id):
-            state = qstat_jobs[job_id]
-            msg = f"WRF QUEUED/RUNNING (job {job_id}, state {state})"
-        elif job_id:
-            msg = f"WRF JOB SUBMITTED ({job_id}) BUT NO OUTPUT"
+        if last_line and last_line != "log not found":
+            last_log_line = last_line
+        if job_id:
+            if job_id in qstat_jobs:
+                job_messages.append(f"{qstat_jobs[job_id]} (id {job_id})")
+            else:
+                job_messages.append(f"submitted id {job_id}")
+    if count == 0:
+        if job_messages:
+            msg = f"WRF QUEUED/RUNNING ({'; '.join(job_messages)})"
         else:
             msg = "WRF NOT STARTED (no job submission found)"
-        if last_line and last_line != "log not found":
-            msg += f" | last log: {last_line}"
+        if last_log_line:
+            msg += f" | last log: {last_log_line}"
         if not qstat_available:
             msg += " | qstat unavailable"
         return (msg, 0)
     if count == 1:
-        job_id, last_line = extract_job_info(log_path)
-        if job_id and qstat_jobs.get(job_id):
-            state = qstat_jobs[job_id]
-            msg = f"V_CFL (single wrfout) | retry running (job {job_id}, state {state})"
+        if job_messages:
+            msg = f"V_CFL (single wrfout) | retry running ({'; '.join(job_messages)})"
         else:
             msg = "V_CFL (single wrfout)"
-        if last_line and last_line != "log not found":
-            msg += f" | last log: {last_line}"
+        if last_log_line:
+            msg += f" | last log: {last_log_line}"
         if not qstat_available:
             msg += " | qstat unavailable"
         return (msg, count)
@@ -275,8 +286,10 @@ def main() -> None:
         fire_id = row["fire_id"]
         cfg = get_cfg(fire_id)
         wrf_dir = Path(cfg["wrf_run_dir"]) / sim_start
-        log_path = logs_dir / f"{fire_id}_{row['date']}.log"
-        result, count = summarize_wrf(fire_id, wrf_dir, log_path, qstat_jobs, qstat_available)
+        log_paths = sorted(logs_dir.glob(f"{fire_id}_{row['date']}*.log"))
+        if not log_paths:
+            log_paths = [logs_dir / f"{fire_id}_{row['date']}.log"]
+        result, count = summarize_wrf(fire_id, wrf_dir, log_paths, qstat_jobs, qstat_available)
         print(f" {fire_id}: {result} ({count} wrfout files) -> {wrf_dir}")
 
 
