@@ -116,11 +116,9 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
                     log.warning('WARNING: Unable to parse interval_seconds from namelist; defaulting to 3600.')
                     interval_seconds = 3600
                 break
-    interval_hours = max(1, math.ceil(interval_seconds / 3600))
-
     cycle_dt = pd.to_datetime(cycle_dt_beg, format=fmt_yyyymmdd_hh)
     beg_dt = cycle_dt
-    end_dt = beg_dt + dt.timedelta(hours=sim_hrs) + dt.timedelta(seconds=interval_seconds)
+    end_dt = beg_dt + dt.timedelta(hours=sim_hrs)
 
     beg_dt_wrf = beg_dt.strftime(fmt_wrf_dt)
     end_dt_wrf = end_dt.strftime(fmt_wrf_dt)
@@ -169,8 +167,7 @@ def main(cycle_dt_beg, sim_hrs, wrf_dir, run_dir, metgrid_dir, tmp_dir, icbc_mod
     with open('namelist.input.template', 'r') as in_file, open('namelist.input', 'w') as out_file:
         for line in in_file:
             if line.strip()[0:9] == 'run_hours':
-                run_hours_total = sim_hrs + interval_hours
-                out_file.write(' run_hours                = '+str(run_hours_total)+',\n')
+                out_file.write(' run_hours                = '+str(sim_hrs)+',\n')
             elif line.strip()[0:10] == 'start_year':
                 out_file.write(' start_year               = '+str(beg_yr)+', '+str(beg_yr)+', '+str(beg_yr)+',\n')
             elif line.strip()[0:11] == 'start_month':
