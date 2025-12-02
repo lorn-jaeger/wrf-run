@@ -303,7 +303,7 @@ def main() -> None:
             disable_ungrib = reference_ungrib is not None
             if disable_ungrib:
                 ensure_ungrib_link(cycle_ungrib_dir, reference_ungrib)
-            cfg_path = args.config_root / f"{fire_id}.yaml"
+            cfg_path = (args.config_root / f"{fire_id}.yaml").resolve()
             cmd, cfg_used, temp_path = build_command(
                 args.workflow_script, sim_start, cfg_path, config_data, disable_ungrib
             )

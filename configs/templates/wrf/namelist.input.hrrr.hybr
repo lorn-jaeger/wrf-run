@@ -106,7 +106,7 @@
 ! SMDIV                               = 0.1,    0.1,    0.1,
 ! EMDIV                               = 0.01,   0.01,   0.01,
 ! EPSSM                               = 0.9,    0.9,    0.9,
- epssm                               = 0.1,    0.1,    0.1,
+ epssm                               = 0.2,    0.2,    0.2,
  khdif                               = 0,      0,      0,
  kvdif                               = 0,      0,      0,
  non_hydrostatic                     = .true., .true., .true., 
