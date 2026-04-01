@@ -1,0 +1,563 @@
+#!/usr/bin/env python3
+
+'''
+download_hrrr_from_aws_or_gc.py
+
+Created by: Jared A. Lee (jaredlee@ucar.edu)
+Created on: 6 Feb 2025
+
+This script downloads HRRR output files for the requested cycle(s) and lead times from either AWS or Google Cloud.
+'''
+
+import os
+import sys
+import argparse
+import pathlib
+import datetime as dt
+import subprocess
+import re
+from urllib.error import HTTPError
+from dataclasses import dataclass
+from typing import Dict, List
+import shutil
+import numpy as np
+import pandas as pd
+import wget
+import logging
+from proc_util import exec_command
+
+this_file = os.path.basename(__file__)
+logging.basicConfig(format=f'{this_file}: %(asctime)s - %(message)s',
+                    level=logging.DEBUG, datefmt='%Y-%m-%dT%H:%M:%S')
+log = logging.getLogger(__name__)
+
+long_time = 5
+long_long_time = 15
+short_time = 3
+curr_dir=os.path.dirname(os.path.abspath(__file__))
+
+@dataclass
+class MissingFileRecord:
+    tag: str
+    valid_time: pd.Timestamp
+    destination: pathlib.Path
+    label: str
+    icbc_analysis: bool
+
+def parse_args():
+    ## Parse the command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-b', '--cycle_dt', default='20220801_00',
+                        help='GFS cycle date/time to download [YYYYMMDD_HH] (default: 20220801_00)')
+    parser.add_argument('-s', '--sim_hrs', default=48, type=int,
+                        help='integer number of forecast hours to download (default: 48)')
+    parser.add_argument('-o', '--out_dir_parent', default=None,
+                        help='string or pathlib.Path object of the local directory where all downloaded HRRR data should be stored')
+    parser.add_argument('-f', '--icbc_fc_dt', default=0, type=int,
+                        help='integer number of hours prior to WRF cycle time for IC/LBC model cycle (default: 0)')
+    parser.add_argument('-i', '--int_h', default=3, type=int,
+                        help='integer number of hours between GEFS files to download (default: 3)')
+    parser.add_argument('-n', '--native_grid', action='store_true',
+                        help='If flag present, then download HRRR native-grid data for atmospheric variables, otherwise only download HRRR pressure-level data.')
+    parser.add_argument('-c', '--icbc_source', default='AWS',
+                        help='Repository from which to download HRRR data files (AWS|Google Cloud) (default: AWS)')
+    parser.add_argument('-a', '--icbc_analysis', action='store_true',
+                        help='If flag present, then download HRRR analysis [f00] data instead of forecast files)')
+
+    args = parser.parse_args()
+    cycle_dt = args.cycle_dt
+    sim_hrs = args.sim_hrs
+    out_dir_parent = args.out_dir_parent
+    icbc_fc_dt = args.icbc_fc_dt
+    int_h = args.int_h
+    native_grid = args.native_grid
+    icbc_source = args.icbc_source
+    icbc_analysis = args.icbc_analysis
+
+    if len(cycle_dt) != 11:
+        log.error('ERROR! Incorrect length for positional argument cycle_dt. Exiting!')
+        parser.print_help()
+        sys.exit(1)
+    elif cycle_dt[8] != '_':
+        log.error('ERROR! Incorrect format for positional argument cycle_dt. Exiting!')
+        parser.print_help()
+        sys.exit(1)
+
+    if out_dir_parent is None:
+        log.error('ERROR: out_dir_parent not specified. Exiting!')
+        sys.exit(1)
+    else:
+        out_dir_parent = pathlib.Path(out_dir_parent)
+
+    return cycle_dt, sim_hrs, out_dir_parent, icbc_fc_dt, int_h, native_grid, icbc_source, icbc_analysis
+
+def wget_error(error_msg, now_time_beg):
+    log.error('ERROR: '+error_msg)
+    log.error('Check if an earlier cycle has the required files and adjust icbc_fc_dt if necessary. Exiting!')
+    now_time_end = dt.datetime.now(dt.UTC)
+    run_time_tot = now_time_end - now_time_beg
+    now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
+    now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
+    log.error('\nScript completed with an error.')
+    log.error('   Beg time: '+now_time_beg_str)
+    log.error('   End time: '+now_time_end_str)
+    log.error('   Run time: '+str(run_time_tot)+'\n')
+    sys.exit(1)
+
+def main(cycle_dt_str, sim_hrs, out_dir_parent, icbc_fc_dt, now_time_beg, interval, native_grid, icbc_source, icbc_analysis):
+
+    # Be very forgiving for variants of specifying GoogleCloud for the repository
+    variants_aws = ['AWS', 'aws']
+    variants_gc = ['GoogleCloud', 'googlecloud', 'Google_Cloud', 'google_cloud', 'GC', 'gc', 'GCloud', 'gcloud']
+    if icbc_source not in variants_aws and icbc_source not in variants_gc:
+        log.error('ERROR: Unknown icbc_source for downloading HRRR data: ' + icbc_source)
+        log.error('Expected AWS or GoogleCloud (or some other variants thereof).')
+        log.error('Exiting!')
+        sys.exit(1)
+
+    ## Calculate the desired lead hours for this cycle, accounting for the possible icbc_fc_dt offset.
+    ## Build array of forecast lead times to download. GFS output on AWS is 1-hourly.
+    leads = np.arange(icbc_fc_dt, sim_hrs+icbc_fc_dt+1, interval)
+    n_leads = len(leads)
+
+    fmt_yyyy = '%Y'
+    fmt_hh = '%H'
+    fmt_yyyymmdd = '%Y%m%d'
+    fmt_yyyymmdd_hh = '%Y%m%d_%H'
+
+    cycle_dt = pd.to_datetime(cycle_dt_str, format=fmt_yyyymmdd_hh)
+    cycle_date = cycle_dt.strftime(fmt_yyyymmdd)
+    cycle_hour = cycle_dt.strftime(fmt_hh)
+
+    # Build the array of valid times for this simulation (most needed for icbc_analysis=True)
+    valid_dt_beg = cycle_dt
+    valid_dt_end = cycle_dt + dt.timedelta(hours=sim_hrs)
+    valid_dt_all = pd.date_range(start=valid_dt_beg, end=valid_dt_end, freq=str(interval) + 'h')
+    n_valid = len(valid_dt_all)
+
+    # Both AWS and Google Cloud archive HRRR data back to the 20140730_18 cycle
+    if cycle_dt < pd.to_datetime('20140730_18', format=fmt_yyyymmdd_hh):
+        log.error('ERROR! HRRR data prior to the 20140730_18 cycle is not available on Google Cloud or AWS.')
+        log.error('You chose ' + cycle_dt_str + ' for a cycle start date/time.')
+        log.error('Please choose a later date or choose a different model than HRRR for ICs/LBCs.')
+        log.error('Exiting!')
+        sys.exit(1)
+
+    # Directory structure for HRRR data on AWS and Google Cloud
+    # All dates have conus directory. Some later dates have other domain directories (e.g., alaska).
+    # TODO: Someday, allow users to request HRRR domains other than conus
+    aws_dir_base = 'https://noaa-hrrr-bdp-pds.s3.amazonaws.com'
+    gc_dir_base = 'https://storage.googleapis.com/high-resolution-rapid-refresh'
+
+    available_files: Dict[str, Dict[pd.Timestamp, pathlib.Path]] = {
+        'wrfprsf': {},
+        'wrfnatf': {},
+    }
+    missing_records: List[MissingFileRecord] = []
+
+    # Loop over lead times
+    if not icbc_analysis:
+        if icbc_source in variants_aws:
+            host_dir = aws_dir_base + '/hrrr.' + cycle_date + '/conus'
+        elif icbc_source in variants_gc:
+            host_dir = gc_dir_base + '/hrrr.' + cycle_date + '/conus'
+
+        # Create the local download directory for this HRRR cycle's files to match the AWS structure
+        out_dir = out_dir_parent.joinpath('hrrr.' + cycle_date, 'conus')
+        out_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(out_dir)
+
+        for ll in range(n_leads):
+            lead_value = int(leads[ll])
+            this_lead = str(lead_value).zfill(2)
+            valid_dt = cycle_dt + dt.timedelta(hours=lead_value)
+
+            # Download HRRR native-grid files if specified (atmosphere-only, no soil data)
+            if native_grid:
+                fname = 'hrrr.t' + cycle_hour + 'z.wrfnatf' + this_lead + '.grib2'
+                url = host_dir+'/'+fname
+                dest = out_dir.joinpath(fname)
+                download_or_queue_file(
+                    url=url,
+                    dest=dest,
+                    tag='wrfnatf',
+                    valid_time=valid_dt,
+                    label=f'lead f{this_lead}',
+                    available_files=available_files,
+                    missing_records=missing_records,
+                    icbc_analysis=icbc_analysis,
+                )
+
+            # Download HRRR pressure-level files no matter what (atmosphere + soil)
+            fname = 'hrrr.t' + cycle_hour + 'z.wrfprsf' + this_lead + '.grib2'
+            url = host_dir+'/'+fname
+            dest = out_dir.joinpath(fname)
+            download_or_queue_file(
+                url=url,
+                dest=dest,
+                tag='wrfprsf',
+                valid_time=valid_dt,
+                label=f'lead f{this_lead}',
+                available_files=available_files,
+                missing_records=missing_records,
+                icbc_analysis=icbc_analysis,
+            )
+    else:
+        # icbc_analysis = True, so loop through valid times of the simulation for f00 files
+        for vv in range(n_valid):
+            this_valid_dt = valid_dt_all[vv]
+            valid_date = this_valid_dt.strftime(fmt_yyyymmdd)
+            valid_hour = this_valid_dt.strftime(fmt_hh)
+
+            if icbc_source in variants_aws:
+                host_dir = aws_dir_base + '/hrrr.' + valid_date + '/conus'
+            elif icbc_source in variants_gc:
+                host_dir = gc_dir_base + '/hrrr.' + valid_date + '/conus'
+
+            # Create the local download directory for this HRRR cycle's files to match the AWS structure
+            out_dir = out_dir_parent.joinpath('hrrr.' + valid_date, 'conus')
+            out_dir.mkdir(parents=True, exist_ok=True)
+            os.chdir(out_dir)
+
+            # Download HRRR native-grid files if specified (atmosphere-only, no soil data)
+            if native_grid:
+                fname = 'hrrr.t' + valid_hour + 'z.wrfnatf00.grib2'
+                url = host_dir + '/' + fname
+
+                dest = out_dir.joinpath(fname)
+                download_or_queue_file(
+                    url=url,
+                    dest=dest,
+                    tag='wrfnatf',
+                    valid_time=this_valid_dt,
+                    label=f'valid {valid_date}_{valid_hour}',
+                    available_files=available_files,
+                    missing_records=missing_records,
+                    icbc_analysis=icbc_analysis,
+                )
+
+            # Download HRRR pressure-level files no matter what (atmosphere + soil)
+            fname = 'hrrr.t' + valid_hour + 'z.wrfprsf00.grib2'
+            url = host_dir + '/' + fname
+            dest = out_dir.joinpath(fname)
+            download_or_queue_file(
+                url=url,
+                dest=dest,
+                tag='wrfprsf',
+                valid_time=this_valid_dt,
+                label=f'valid {valid_date}_{valid_hour}',
+                available_files=available_files,
+                missing_records=missing_records,
+                icbc_analysis=icbc_analysis,
+            )
+
+    interpolate_missing_files(available_files, missing_records, log)
+
+
+def download_or_queue_file(url, dest, tag, valid_time, label, available_files, missing_records, icbc_analysis):
+    if dest.is_file():
+        log.info(f'   File {dest.name} already exists locally. Not downloading again from server.')
+        record_available_file(available_files, tag, valid_time, dest)
+        return
+
+    log.info('Downloading ' + url)
+    try:
+        wget.download(url)
+        log.info('')
+        record_available_file(available_files, tag, valid_time, dest)
+    except HTTPError as exc:
+        log.warning(f'HTTP error while downloading {url}: {exc}. Marking for interpolation.')
+        missing_records.append(MissingFileRecord(
+            tag=tag,
+            valid_time=valid_time,
+            destination=dest,
+            label=label,
+            icbc_analysis=icbc_analysis,
+        ))
+
+
+def record_available_file(available_files, tag, valid_time, path):
+    available_files.setdefault(tag, {})[valid_time] = path
+
+
+def interpolate_missing_files(available_files, missing_records, logger):
+    if not missing_records:
+        return
+
+    logger.info(f'Attempting to interpolate {len(missing_records)} missing HRRR files.')
+    unresolved = []
+
+    for record in missing_records:
+        success = interpolate_single_file(available_files, record, logger)
+        if success:
+            record_available_file(available_files, record.tag, record.valid_time, record.destination)
+        else:
+            unresolved.append(record)
+
+    if unresolved:
+        for record in unresolved:
+            logger.error(f'Unable to interpolate missing file {record.destination} ({record.label}).')
+        logger.error('Interpolation failed for some files. Exiting!')
+        sys.exit(1)
+
+
+def interpolate_single_file(available_files, record, logger):
+    available_map = available_files.get(record.tag, {})
+    if not available_map:
+        logger.error(f'No available files of type {record.tag} to interpolate {record.destination}.')
+        return False
+
+    sorted_times = sorted(available_map.keys())
+    prev_time = max((ts for ts in sorted_times if ts < record.valid_time), default=None)
+    next_time = min((ts for ts in sorted_times if ts > record.valid_time), default=None)
+
+    record.destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if prev_time is None and next_time is None:
+        logger.error(f'No neighboring files exist to interpolate {record.destination}.')
+        return False
+    if prev_time is None:
+        shutil.copy2(available_map[next_time], record.destination)
+        logger.warning(f'Copied {available_map[next_time].name} to fill missing {record.destination.name} (no earlier neighbor).')
+        return True
+    if next_time is None:
+        shutil.copy2(available_map[prev_time], record.destination)
+        logger.warning(f'Copied {available_map[prev_time].name} to fill missing {record.destination.name} (no later neighbor).')
+        return True
+
+    prev_file = available_map[prev_time]
+    next_file = available_map[next_time]
+    total_seconds = (next_time - prev_time).total_seconds()
+    if total_seconds <= 0:
+        shutil.copy2(prev_file, record.destination)
+        logger.warning(f'Duplicate timestamps detected. Copied {prev_file.name} to {record.destination.name}.')
+        return True
+
+    weight_prev = (next_time - record.valid_time).total_seconds() / total_seconds
+    weight_next = 1.0 - weight_prev
+    logger.info(
+        f'Interpolating {record.destination.name} between {prev_file.name} and {next_file.name} '
+        f'with weights {weight_prev:.2f}/{weight_next:.2f}.'
+    )
+
+    if try_wgrib2_interpolation(
+        prev_file,
+        next_file,
+        record.destination,
+        weight_prev,
+        weight_next,
+        logger,
+        record.valid_time,
+        record.icbc_analysis,
+    ):
+        return True
+
+    fallback = prev_file if weight_prev >= weight_next else next_file
+    shutil.copy2(fallback, record.destination)
+    if record.icbc_analysis:
+        if try_wgrib2_set_date(record.destination, record.valid_time, logger):
+            logger.warning(
+                f'Copied {fallback.name} and adjusted date to {record.valid_time} for {record.destination.name}.'
+            )
+            return True
+    logger.warning(
+        f'wgrib2 interpolation unavailable; copied {fallback.name} to approximate {record.destination.name}.'
+    )
+    return True
+
+
+def try_wgrib2_interpolation(prev_file, next_file, target_file, weight_prev, weight_next, logger, valid_time, icbc_analysis):
+    wgrib2_exe = find_wgrib2(logger)
+    if not wgrib2_exe:
+        logger.debug('wgrib2 not found; skipping interpolation command.')
+        return False
+    prev_file = sanitize_grib2_file(prev_file, logger, replace_original=False)
+    next_file = sanitize_grib2_file(next_file, logger, replace_original=False)
+
+    cmd = [
+        wgrib2_exe,
+        str(prev_file),
+        '-rpn', f'{weight_prev:.6f}:*:sto_1',
+        '-import_grib', str(next_file),
+        '-rpn', f'{weight_next:.6f}:*:rcl_1:+',
+        '-grib', str(target_file),
+    ]
+    ret_code, _ = exec_command(cmd, logger, exit_on_fail=False, verbose=False)
+    if ret_code != 0:
+        logger.warning('wgrib2 interpolation command failed.')
+        if target_file.exists():
+            try:
+                target_file.unlink()
+            except OSError:
+                logger.warning(f'Unable to remove incomplete file {target_file}.')
+        return False
+    if icbc_analysis:
+        if try_wgrib2_set_date(target_file, valid_time, logger):
+            sanitize_grib2_file(target_file, logger, replace_original=True)
+            return True
+    sanitize_grib2_file(target_file, logger, replace_original=True)
+    return True
+
+
+def try_wgrib2_set_date(target_file, valid_time, logger):
+    wgrib2_exe = find_wgrib2(logger)
+    if not wgrib2_exe:
+        logger.debug('wgrib2 not found; skipping set_date.')
+    return False
+
+
+def sanitize_grib2_file(grib_path, logger, replace_original=False):
+    wgrib2_exe = find_wgrib2(logger)
+    if not wgrib2_exe:
+        return grib_path
+    if not pathlib.Path(grib_path).exists():
+        return grib_path
+
+    cmd = [wgrib2_exe, str(grib_path), '-s']
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    output = (result.stdout or '') + (result.stderr or '')
+    if result.returncode == 0:
+        return grib_path
+    if 'bad stat_proc' not in output and 'bad grib message' not in output and 'forecast time' not in output:
+        return grib_path
+
+    bad_rec = None
+    for line in output.splitlines():
+        if 'ASNOW' in line:
+            match = re.match(r'^\\s*(\\d+):', line)
+            if match:
+                bad_rec = int(match.group(1))
+                break
+    if bad_rec is None:
+        for line in output.splitlines():
+            match = re.match(r'^\\s*(\\d+):', line)
+            if match:
+                bad_rec = int(match.group(1))
+    if bad_rec is None:
+        logger.warning(f'Unable to locate bad GRIB2 record in {pathlib.Path(grib_path).name}; leaving file unchanged.')
+        return grib_path
+
+    logger.warning(
+        f'Detected bad GRIB2 record {bad_rec} in {pathlib.Path(grib_path).name}; rebuilding without it.'
+    )
+    grib_path = pathlib.Path(grib_path)
+    clean_path = grib_path.with_suffix(grib_path.suffix + '.clean')
+    if replace_original:
+        clean_path = grib_path.with_suffix(grib_path.suffix + '.clean_tmp')
+
+    part1 = grib_path.with_suffix(grib_path.suffix + '.part1')
+    part2 = grib_path.with_suffix(grib_path.suffix + '.part2')
+    for tmp_path in (part1, part2, clean_path):
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                logger.warning(f'Unable to remove stale file {tmp_path}.')
+
+    if bad_rec > 1:
+        cmd_part1 = [
+            wgrib2_exe,
+            str(grib_path),
+            '-for', f'1:{bad_rec - 1}:1',
+            '-grib', str(part1),
+        ]
+        exec_command(cmd_part1, logger, exit_on_fail=False, verbose=False, wait=True)
+
+    cmd_part2 = [
+        wgrib2_exe,
+        str(grib_path),
+        '-for', f'{bad_rec + 1}:999999:1',
+        '-grib', str(part2),
+    ]
+    exec_command(cmd_part2, logger, exit_on_fail=False, verbose=False, wait=True)
+
+    try:
+        with open(clean_path, 'wb') as out_f:
+            if part1.exists():
+                with open(part1, 'rb') as in_f:
+                    shutil.copyfileobj(in_f, out_f)
+            if part2.exists():
+                with open(part2, 'rb') as in_f:
+                    shutil.copyfileobj(in_f, out_f)
+    except OSError as exc:
+        logger.warning(f'Unable to assemble cleaned GRIB2 file for {grib_path.name}: {exc}')
+        return grib_path
+    finally:
+        for tmp_path in (part1, part2):
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    logger.warning(f'Unable to remove temporary file {tmp_path}.')
+
+    if not clean_path.exists() or clean_path.stat().st_size == 0:
+        logger.warning(f'Cleaned GRIB2 file is empty for {grib_path.name}; leaving original unchanged.')
+        return grib_path
+
+    if replace_original:
+        try:
+            clean_path.replace(grib_path)
+        except OSError as exc:
+            logger.warning(f'Unable to replace {grib_path.name} with cleaned version: {exc}')
+            return grib_path
+        return grib_path
+
+    return clean_path
+    date_code = valid_time.strftime('%Y%m%d%H%M%S')
+    tmp_target = target_file.with_suffix(target_file.suffix + '.tmp')
+    cmd = [
+        wgrib2_exe,
+        str(target_file),
+        '-set_date', date_code,
+        '-grib', str(tmp_target),
+    ]
+    ret_code, _ = exec_command(cmd, logger, exit_on_fail=False, verbose=False)
+    if ret_code != 0:
+        if tmp_target.exists() and tmp_target.stat().st_size > 0:
+            logger.warning(
+                'wgrib2 set_date returned non-zero; keeping output file despite warnings.'
+            )
+            tmp_target.replace(target_file)
+            return True
+        logger.warning('wgrib2 set_date failed.')
+        if tmp_target.exists():
+            tmp_target.unlink()
+        return False
+    tmp_target.replace(target_file)
+    return True
+
+
+def find_wgrib2(logger):
+    wgrib2_exe = shutil.which('wgrib2')
+    if wgrib2_exe:
+        return wgrib2_exe
+    env_candidates = [os.environ.get('WGRIB2'), os.environ.get('WGRIB2_PATH'), os.environ.get('WGRIB2_EXE')]
+    for candidate in env_candidates:
+        if candidate and pathlib.Path(candidate).is_file():
+            return candidate
+    search_roots = [
+        pathlib.Path('/glade/u/apps'),
+        pathlib.Path('/glade/work'),
+    ]
+    for root in search_roots:
+        if not root.exists():
+            continue
+        matches = sorted(root.glob('**/wgrib2*/bin/wgrib2'))
+        if matches:
+            return str(matches[-1])
+    return None
+
+
+if __name__ == '__main__':
+    now_time_beg = dt.datetime.now(dt.UTC)
+    cycle_dt, sim_hrs, out_dir_parent, icbc_fc_dt, int_h, native_grid, icbc_source, icbc_analysis = parse_args()
+    main(cycle_dt, sim_hrs, out_dir_parent, icbc_fc_dt, now_time_beg, int_h, native_grid, icbc_source, icbc_analysis)
+    now_time_end = dt.datetime.now(dt.UTC)
+    run_time_tot = now_time_end - now_time_beg
+    now_time_beg_str = now_time_beg.strftime('%Y-%m-%d %H:%M:%S')
+    now_time_end_str = now_time_end.strftime('%Y-%m-%d %H:%M:%S')
+    log.info('')
+    log.info(this_file + ' completed successfully.')
+    log.info('   Beg time: '+now_time_beg_str)
+    log.info('   End time: '+now_time_end_str)
+    log.info('   Run time: '+str(run_time_tot)+'\n')
