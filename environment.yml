@@ -1,14 +1,19 @@
 name: workflow
 channels:
-  - defaults
   - conda-forge
 dependencies:
-  - python=3.11.9
   - pandas
-  - wrf-python
-  - numpy
-  - joblib
-  - pyyaml
   - pudb
+  - joblib
+  - wrf-python
   - wget
-prefix: /glade/u/apps/opt/conda/envs/npl-2024b
+  - numpy
+  - python=3.11.14
+  - pyyaml
+  - f90nml
+  - salem
+  - rasterio
+  - matplotlib
+  - ipykernel
+  - cartopy
+  - gh
