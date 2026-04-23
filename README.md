@@ -1,1 +1,5 @@
-# <center>wrf-run</center>
+# wrf-run
+
+Entry point is run.sh
+
+
